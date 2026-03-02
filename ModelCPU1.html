@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>3D Physics Simulation</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0f; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 20px; left: 20px; color: #fff;
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px;
+    padding: 20px 24px;
+    min-width: 230px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    z-index: 10;
+  }
+  #ui::-webkit-scrollbar { width: 4px; }
+  #ui::-webkit-scrollbar-thumb { background: rgba(168,85,247,0.4); border-radius: 4px; }
+  #ui h2 { font-size: 14px; font-weight: 600; color: #a78bfa; margin-bottom: 14px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .stat { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 8px; color: #cbd5e1; }
+  .stat span { color: #f8fafc; font-weight: 600; }
+  .divider { border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 14px 0; }
+  .btn { display: block; width: 100%; padding: 9px 0; margin-top: 8px; border: none; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .btn-primary { background: linear-gradient(135deg, #7c3aed, #a855f7); color: #fff; }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(124,58,237,0.4); }
+  .btn-secondary { background: rgba(255,255,255,0.08); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.1); }
+  .btn-secondary:hover { background: rgba(255,255,255,0.13); }
+  label { font-size: 12px; color: #94a3b8; display: block; margin-bottom: 4px; margin-top: 10px; }
+  input[type=range] { width: 100%; accent-color: #a855f7; }
+  .shape-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; }
+  .shape-btn {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px; padding: 8px 4px 6px; cursor: pointer; transition: all 0.18s;
+    text-align: center; color: #cbd5e1; font-size: 10px; font-weight: 600; line-height: 1.3;
+  }
+  .shape-btn:hover { background: rgba(168,85,247,0.18); border-color: rgba(168,85,247,0.4); }
+  .shape-btn.active { background: rgba(168,85,247,0.28); border-color: #a855f7; color: #e9d5ff; box-shadow: 0 0 10px rgba(168,85,247,0.3); }
+  .shape-btn .icon { font-size: 18px; display: block; margin-bottom: 3px; }
+  #sidesRow { display: none; margin-top: 10px; }
+  #sidesRow.visible { display: block; }
+  .sides-picker { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+  .side-btn {
+    flex: 1; min-width: 28px; padding: 5px 2px; border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 7px; background: rgba(255,255,255,0.06); color: #cbd5e1;
+    font-size: 11px; font-weight: 600; cursor: pointer; text-align: center; transition: all 0.15s;
+  }
+  .side-btn:hover { background: rgba(168,85,247,0.18); }
+  .side-btn.active { background: rgba(168,85,247,0.3); border-color: #a855f7; color: #e9d5ff; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+  .toggle-label { font-size: 12px; color: #94a3b8; }
+  .toggle {
+    position: relative; width: 36px; height: 20px; background: rgba(255,255,255,0.12);
+    border-radius: 10px; cursor: pointer; transition: background 0.2s; border: none; flex-shrink: 0;
+  }
+  .toggle.on { background: #7c3aed; }
+  .toggle::after { content: ''; position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff; top: 3px; left: 3px; transition: left 0.2s; }
+  .toggle.on::after { left: 19px; }
+  #controls {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.35); font-size: 12px; letter-spacing: 0.05em;
+    text-align: center; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="ui">
+  <h2>⚛ Physics Sim</h2>
+  <div class="stat">Objects <span id="count">0</span></div>
+  <div class="stat">FPS <span id="fps">0</span></div>
+  <div class="stat">Collisions <span id="colls">0</span></div>
+  <hr class="divider">
+
+  <label>Shape</label>
+  <div class="shape-grid">
+    <button class="shape-btn active" data-shape="sphere"><span class="icon">⚪</span>Sphere</button>
+    <button class="shape-btn" data-shape="tetrahedron"><span class="icon">🔺</span>Tetra</button>
+    <button class="shape-btn" data-shape="cube"><span class="icon">🔲</span>Cube</button>
+    <button class="shape-btn" data-shape="octahedron"><span class="icon">💎</span>Octa</button>
+    <button class="shape-btn" data-shape="dodecahedron"><span class="icon">🔮</span>Dodeca</button>
+    <button class="shape-btn" data-shape="icosahedron"><span class="icon">🧊</span>Icosa</button>
+    <button class="shape-btn" data-shape="cone"><span class="icon">🔔</span>Cone</button>
+    <button class="shape-btn" data-shape="cylinder"><span class="icon">🥫</span>Cylinder</button>
+    <button class="shape-btn" data-shape="prism"><span class="icon">⬡</span>Prism</button>
+  </div>
+
+  <div id="sidesRow">
+    <label>Polygon sides</label>
+    <div class="sides-picker" id="sidesPicker"></div>
+  </div>
+
+  <div class="toggle-row">
+    <span class="toggle-label">Spin objects</span>
+    <button class="toggle on" id="spinToggle"></button>
+  </div>
+  <div class="toggle-row">
+    <span class="toggle-label">Show trails</span>
+    <button class="toggle" id="trailToggle"></button>
+  </div>
+  <div id="trailDurationRow" style="display:none">
+    <label>Trail duration: <span id="trailDurLabel">1.0</span>s</label>
+    <input type="range" id="trailDurSlider" min="0.1" max="10" step="0.1" value="1">
+  </div>
+
+  <hr class="divider">
+  <label>Gravity: <span id="gravLabel">9.8</span></label>
+  <input type="range" id="gravSlider" min="0" max="30" step="0.5" value="9.8">
+  <label>Restitution (bounce): <span id="restLabel">0.75</span></label>
+  <input type="range" id="restSlider" min="0" max="1" step="0.05" value="0.75">
+  <label>Friction: <span id="fricLabel">0.995</span></label>
+  <input type="range" id="fricSlider" min="0.95" max="1" step="0.001" value="0.995">
+  <hr class="divider">
+  <label>Number of objects to add</label>
+  <input type="number" id="addCount" value="1" min="1"
+    style="width:100%; padding:7px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.12);
+           background:rgba(255,255,255,0.07); color:#f8fafc; font-size:13px; margin-bottom:2px;">
+  <button class="btn btn-primary" id="addBtn">+ Add Objects</button>
+  <button class="btn btn-secondary" id="resetBtn">↺ Reset</button>
+  <button class="btn btn-secondary" id="explodeBtn">💥 Explode</button>
+</div>
+<div id="controls">Drag to rotate · Scroll to zoom · Right-drag to pan</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─── Scene ─────────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+scene.fog = new THREE.Fog(0x0a0a0f, 40, 80);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(0, 12, 22);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+// ─── Lighting ──────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0x1a1a2e, 0.8));
+const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+sun.position.set(10, 20, 10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { near:0.5, far:80, left:-20, right:20, top:20, bottom:-20 });
+scene.add(sun);
+const fill = new THREE.PointLight(0x7c3aed, 0.8, 40);
+fill.position.set(-10, 5, -5);
+scene.add(fill);
+const rim = new THREE.PointLight(0x06b6d4, 0.6, 40);
+rim.position.set(10, 3, -10);
+scene.add(rim);
+
+// ─── Arena ─────────────────────────────────────────────────────────────────
+const BOX = { w: 12, h: 10, d: 12 };
+const arenaGeo = new THREE.BoxGeometry(BOX.w*2, BOX.h*2, BOX.d*2);
+scene.add(new THREE.Mesh(arenaGeo, new THREE.MeshStandardMaterial({
+  color: 0x1e1b4b, roughness: 0.8, metalness: 0.1, transparent: true, opacity: 0.18, side: THREE.BackSide
+})));
+const grid = new THREE.GridHelper(BOX.w*2, 24, 0x4c1d95, 0x1e1b4b);
+grid.position.y = -BOX.h;
+scene.add(grid);
+scene.add(new THREE.LineSegments(
+  new THREE.EdgesGeometry(arenaGeo),
+  new THREE.LineBasicMaterial({ color: 0x4c1d95, transparent: true, opacity: 0.4 })
+));
+
+// ─── Config ────────────────────────────────────────────────────────────────
+let currentShape = 'sphere';
+let prismSides   = 6;
+let spinEnabled  = true;
+let trailEnabled = false;
+
+const PALETTE = [
+  0xff6b6b, 0xffa94d, 0xffd43b, 0x69db7c,
+  0x4dabf7, 0xda77f2, 0xff8787, 0x63e6be,
+  0x74c0fc, 0xf783ac
+];
+
+// ─── Trail constants ────────────────────────────────────────────────────────
+let TRAIL_DURATION = 1.0;     // seconds to fully fade out (user-controlled)
+const TRAIL_MIN_DIST = 0.05;  // min distance between recorded points
+
+// ─── Shape Geometry ────────────────────────────────────────────────────────
+function makeGeometry(shape, r, sides) {
+  switch (shape) {
+    case 'sphere':       return new THREE.SphereGeometry(r, 32, 32);
+    case 'tetrahedron':  return new THREE.TetrahedronGeometry(r * 1.3);
+    case 'cube':         return new THREE.BoxGeometry(r*1.7, r*1.7, r*1.7);
+    case 'octahedron':   return new THREE.OctahedronGeometry(r * 1.3);
+    case 'dodecahedron': return new THREE.DodecahedronGeometry(r * 1.2);
+    case 'icosahedron':  return new THREE.IcosahedronGeometry(r * 1.3);
+    case 'cone':         return new THREE.ConeGeometry(r, r*2.2, sides, 1);
+    case 'cylinder':     return new THREE.CylinderGeometry(r, r, r*2, sides, 1);
+    case 'prism':        return new THREE.CylinderGeometry(r*1.2, r*1.2, r*1.8, sides, 1);
+    default:             return new THREE.SphereGeometry(r, 32, 32);
+  }
+}
+
+// ─── Physics Objects ───────────────────────────────────────────────────────
+let objects = [];
+let collisionCount = 0;
+let GRAVITY = 9.8, RESTITUTION = 0.75, FRICTION = 0.995;
+
+function spawnObject(x, y, z) {
+  const r     = 0.4 + Math.random() * 0.5;
+  const color = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+  const sides = ['cone','cylinder','prism'].includes(currentShape) ? prismSides : 6;
+
+  const geo = makeGeometry(currentShape, r, sides);
+  const mat = new THREE.MeshStandardMaterial({
+    color, roughness: 0.25, metalness: 0.6,
+    emissive: color, emissiveIntensity: 0.08
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.position.set(x, y, z);
+  mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+  const glow = new THREE.PointLight(color, 0.5, 3.5);
+  mesh.add(glow);
+  scene.add(mesh);
+
+  // Trail line (one per object, rebuilt each frame)
+  const trailGeo = new THREE.BufferGeometry();
+  const trailMat = new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 1, depthWrite: false
+  });
+  const trailLine = new THREE.Line(trailGeo, trailMat);
+  trailLine.frustumCulled = false;
+  trailLine.visible = trailEnabled;
+  scene.add(trailLine);
+
+  objects.push({
+    mesh, trailLine, r, color,
+    colorObj: new THREE.Color(color),
+    pos:    new THREE.Vector3(x, y, z),
+    vel:    new THREE.Vector3((Math.random()-0.5)*6, (Math.random()-0.5)*4, (Math.random()-0.5)*6),
+    angVel: new THREE.Vector3((Math.random()-0.5)*2, (Math.random()-0.5)*2, (Math.random()-0.5)*2),
+    mass:   r * r * r,
+    // trail: array of { x, y, z, t }
+    trail:  [],
+    lastTrailPos: new THREE.Vector3(x, y, z)
+  });
+}
+
+function spawnRandom() {
+  spawnObject(
+    (Math.random()-0.5)*(BOX.w*1.4),
+    BOX.h * 0.6,
+    (Math.random()-0.5)*(BOX.d*1.4)
+  );
+}
+
+function clearAll() {
+  for (const o of objects) {
+    scene.remove(o.mesh);
+    scene.remove(o.trailLine);
+    o.trailLine.geometry.dispose();
+    o.trailLine.material.dispose();
+  }
+  objects = [];
+  collisionCount = 0;
+}
+
+function resetScene() {
+  clearAll();
+  for (let i = 0; i < 10; i++) spawnRandom();
+}
+
+resetScene();
+
+// ─── Trail Update ──────────────────────────────────────────────────────────
+function updateTrail(o, now) {
+  // Record a new point if moved enough
+  const distSq = o.pos.distanceToSquared(o.lastTrailPos);
+  if (distSq >= TRAIL_MIN_DIST * TRAIL_MIN_DIST) {
+    o.trail.push({ x: o.pos.x, y: o.pos.y, z: o.pos.z, t: now });
+    o.lastTrailPos.copy(o.pos);
+  }
+
+  // Expire points older than TRAIL_DURATION
+  const cutoff = now - TRAIL_DURATION;
+  while (o.trail.length > 1 && o.trail[0].t < cutoff) o.trail.shift();
+
+  const pts = o.trail;
+  if (pts.length < 2) {
+    o.trailLine.geometry.setDrawRange(0, 0);
+    return;
+  }
+
+  const positions = new Float32Array(pts.length * 3);
+  const colors    = new Float32Array(pts.length * 3);
+  const c = o.colorObj;
+
+  for (let i = 0; i < pts.length; i++) {
+    const p   = pts[i];
+    const age = (now - p.t) / TRAIL_DURATION;        // 0=new, 1=oldest
+    const a   = Math.max(0, 1 - age);                // opacity factor
+
+    positions[i*3]   = p.x;
+    positions[i*3+1] = p.y;
+    positions[i*3+2] = p.z;
+
+    colors[i*3]   = c.r * a;
+    colors[i*3+1] = c.g * a;
+    colors[i*3+2] = c.b * a;
+  }
+
+  const geo = o.trailLine.geometry;
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(colors,    3));
+  geo.setDrawRange(0, pts.length);
+  geo.computeBoundingSphere();
+}
+
+// ─── Physics Step ──────────────────────────────────────────────────────────
+function stepPhysics(dt, now) {
+  dt = Math.min(dt, 0.05);
+
+  for (const o of objects) {
+    o.vel.y -= GRAVITY * dt;
+    o.pos.addScaledVector(o.vel, dt);
+    o.vel.multiplyScalar(FRICTION);
+
+    if (spinEnabled) {
+      o.mesh.rotation.x += o.angVel.x * dt;
+      o.mesh.rotation.y += o.angVel.y * dt;
+      o.mesh.rotation.z += o.angVel.z * dt;
+      o.angVel.multiplyScalar(0.999);
+    }
+
+    const wx = BOX.w - o.r, wy = BOX.h - o.r, wz = BOX.d - o.r;
+    if (o.pos.x >  wx) { o.pos.x =  wx; o.vel.x *= -RESTITUTION; o.angVel.z += o.vel.y * 0.1; }
+    if (o.pos.x < -wx) { o.pos.x = -wx; o.vel.x *= -RESTITUTION; o.angVel.z -= o.vel.y * 0.1; }
+    if (o.pos.y >  wy) { o.pos.y =  wy; o.vel.y *= -RESTITUTION; }
+    if (o.pos.y < -wy) {
+      o.pos.y = -wy; o.vel.y *= -RESTITUTION;
+      o.vel.x *= 0.98; o.vel.z *= 0.98;
+      o.angVel.x += o.vel.z * 0.15;
+      o.angVel.z -= o.vel.x * 0.15;
+    }
+    if (o.pos.z >  wz) { o.pos.z =  wz; o.vel.z *= -RESTITUTION; o.angVel.x += o.vel.y * 0.1; }
+    if (o.pos.z < -wz) { o.pos.z = -wz; o.vel.z *= -RESTITUTION; o.angVel.x -= o.vel.y * 0.1; }
+  }
+
+  // Ball–ball collisions
+  for (let i = 0; i < objects.length; i++) {
+    for (let j = i+1; j < objects.length; j++) {
+      const a = objects[i], b = objects[j];
+      const diff = new THREE.Vector3().subVectors(b.pos, a.pos);
+      const dist = diff.length();
+      const minDist = a.r + b.r;
+      if (dist < minDist && dist > 0.001) {
+        collisionCount++;
+        const normal  = diff.clone().divideScalar(dist);
+        const overlap = (minDist - dist) * 0.5;
+        a.pos.addScaledVector(normal, -overlap);
+        b.pos.addScaledVector(normal,  overlap);
+        const relVel = b.vel.clone().sub(a.vel).dot(normal);
+        if (relVel < 0) {
+          const impulse = -(1 + RESTITUTION) * relVel / (1/a.mass + 1/b.mass);
+          a.vel.addScaledVector(normal, -impulse / a.mass);
+          b.vel.addScaledVector(normal,  impulse / b.mass);
+          if (spinEnabled) {
+            const kick = normal.clone().multiplyScalar(impulse * 0.4);
+            a.angVel.add(kick); b.angVel.sub(kick);
+          }
+        }
+      }
+    }
+  }
+
+  // Sync mesh positions & update trails
+  for (const o of objects) {
+    o.mesh.position.copy(o.pos);
+    if (trailEnabled) updateTrail(o, now);
+  }
+}
+
+// ─── Orbit Controls ────────────────────────────────────────────────────────
+let isDragging = false, isRight = false, prevX = 0, prevY = 0;
+let spherical = { theta: 0.5, phi: 1.0, r: 26 };
+const panOffset = new THREE.Vector3();
+
+renderer.domElement.addEventListener('mousedown', e => {
+  isDragging = true; isRight = e.button === 2; prevX = e.clientX; prevY = e.clientY;
+});
+window.addEventListener('mouseup', () => { isDragging = false; });
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const dx = e.clientX - prevX, dy = e.clientY - prevY;
+  prevX = e.clientX; prevY = e.clientY;
+  if (!isRight) {
+    spherical.theta -= dx * 0.007;
+    spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi + dy * 0.007));
+  } else {
+    const right = new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
+    panOffset.addScaledVector(right, -dx * 0.03);
+    panOffset.addScaledVector(camera.up, dy * 0.03);
+  }
+});
+renderer.domElement.addEventListener('wheel', e => {
+  spherical.r = Math.max(5, Math.min(60, spherical.r + e.deltaY * 0.04));
+});
+renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+function updateCamera() {
+  const x = spherical.r * Math.sin(spherical.phi) * Math.sin(spherical.theta);
+  const y = spherical.r * Math.cos(spherical.phi);
+  const z = spherical.r * Math.sin(spherical.phi) * Math.cos(spherical.theta);
+  camera.position.set(x + panOffset.x, y + panOffset.y, z + panOffset.z);
+  camera.lookAt(panOffset);
+}
+
+// ─── UI ────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.shape-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.shape-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentShape = btn.dataset.shape;
+    const needsSides = ['prism','cone','cylinder'].includes(currentShape);
+    document.getElementById('sidesRow').classList.toggle('visible', needsSides);
+  });
+});
+
+[3,4,5,6,7,8,10,12].forEach(n => {
+  const b = document.createElement('button');
+  b.className = 'side-btn' + (n === 6 ? ' active' : '');
+  b.textContent = n;
+  b.onclick = () => {
+    document.querySelectorAll('.side-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    prismSides = n;
+  };
+  document.getElementById('sidesPicker').appendChild(b);
+});
+
+const spinToggle = document.getElementById('spinToggle');
+spinToggle.onclick = () => { spinEnabled = !spinEnabled; spinToggle.classList.toggle('on', spinEnabled); };
+
+const trailToggle = document.getElementById('trailToggle');
+trailToggle.onclick = () => {
+  trailEnabled = !trailEnabled;
+  trailToggle.classList.toggle('on', trailEnabled);
+  document.getElementById('trailDurationRow').style.display = trailEnabled ? 'block' : 'none';
+  for (const o of objects) {
+    o.trailLine.visible = trailEnabled;
+    if (!trailEnabled) {
+      o.trail = [];
+      o.trailLine.geometry.setDrawRange(0, 0);
+    }
+  }
+};
+
+const trailDurSlider = document.getElementById('trailDurSlider');
+trailDurSlider.oninput = () => {
+  TRAIL_DURATION = parseFloat(trailDurSlider.value);
+  document.getElementById('trailDurLabel').textContent = TRAIL_DURATION.toFixed(1);
+};
+
+document.getElementById('addBtn').onclick = () => {
+  const count = Math.max(1, parseInt(document.getElementById('addCount').value) || 1);
+  const toAdd = count;
+  for (let i = 0; i < toAdd; i++) spawnRandom();
+};
+document.getElementById('resetBtn').onclick = resetScene;
+document.getElementById('explodeBtn').onclick = () => {
+  for (const o of objects) {
+    const dir = o.pos.clone().normalize();
+    if (dir.length() < 0.1) dir.set(Math.random()-0.5, 1, Math.random()-0.5).normalize();
+    o.vel.addScaledVector(dir, 12 + Math.random()*8);
+    o.vel.y += 5;
+    if (spinEnabled) o.angVel.set((Math.random()-0.5)*8, (Math.random()-0.5)*8, (Math.random()-0.5)*8);
+  }
+};
+
+const gravSlider = document.getElementById('gravSlider');
+gravSlider.oninput = () => { GRAVITY = parseFloat(gravSlider.value); document.getElementById('gravLabel').textContent = GRAVITY.toFixed(1); };
+const restSlider = document.getElementById('restSlider');
+restSlider.oninput = () => { RESTITUTION = parseFloat(restSlider.value); document.getElementById('restLabel').textContent = RESTITUTION.toFixed(2); };
+const fricSlider = document.getElementById('fricSlider');
+fricSlider.oninput = () => { FRICTION = parseFloat(fricSlider.value); document.getElementById('fricLabel').textContent = FRICTION.toFixed(3); };
+
+// ─── Render Loop ───────────────────────────────────────────────────────────
+let lastTime = performance.now(), frameCount = 0, fpsTimer = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const nowMs = performance.now();
+  const now   = nowMs / 1000;        // seconds
+  const dt    = (nowMs - lastTime) / 1000;
+  lastTime    = nowMs;
+
+  frameCount++; fpsTimer += dt;
+  if (fpsTimer >= 0.5) {
+    document.getElementById('fps').textContent = Math.round(frameCount / fpsTimer);
+    frameCount = 0; fpsTimer = 0;
+  }
+
+  stepPhysics(dt, now);
+  updateCamera();
+
+  document.getElementById('count').textContent  = objects.length;
+  document.getElementById('colls').textContent  = collisionCount.toLocaleString();
+
+  fill.intensity = 0.6 + Math.sin(nowMs * 0.002) * 0.2;
+  renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+animate();
+</script>
+</body>
+</html>
