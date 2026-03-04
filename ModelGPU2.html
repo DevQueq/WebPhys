@@ -659,18 +659,22 @@ async function main() {
   // ── Trail readback ────────────────────────────────────────────────────────
   let readPending = false;
 
+  let readbackNumP = 0; // capture numP at time of scheduling
   function scheduleReadback(enc) {
     if (readPending || !trailEnabled || numP===0) return;
     readPending = true;
-    enc.copyBufferToBuffer(pBuf, 0, rBuf, 0, numP * FS * 4);
+    readbackNumP = numP; // snapshot so processReadback uses the same count
+    enc.copyBufferToBuffer(pBuf, 0, rBuf, 0, readbackNumP * FS * 4);
   }
 
   function processReadback(now) {
     if (!readPending || rBuf.mapState === 'pending') return;
-    rBuf.mapAsync(GPUMapMode.READ, 0, numP * FS * 4).then(() => {
-      const d = new Float32Array(rBuf.getMappedRange(0, numP * FS * 4));
+    const snapNumP = readbackNumP; // use the snapshotted count
+    const snapBytes = snapNumP * FS * 4;
+    rBuf.mapAsync(GPUMapMode.READ, 0, snapBytes).then(() => {
+      const d = new Float32Array(rBuf.getMappedRange(0, snapBytes));
       let dirty = false;
-      for (let i=0; i<numP; i++) {
+      for (let i=0; i<snapNumP; i++) {
         const b  = i*FS;
         const px=d[b], py=d[b+1], pz=d[b+2];
         const lx=trailLast[i*3], ly=trailLast[i*3+1], lz=trailLast[i*3+2];
@@ -686,7 +690,7 @@ async function main() {
       }
       rBuf.unmap();
       readPending = false;
-      if (dirty) device.queue.writeBuffer(trailBuf, 0, trailCPU, 0, numP * TPTS * 8);
+      if (dirty) device.queue.writeBuffer(trailBuf, 0, trailCPU, 0, Math.min(numP * TPTS * 8, trailCPU.length));
     }).catch(() => { readPending = false; });
   }
 
