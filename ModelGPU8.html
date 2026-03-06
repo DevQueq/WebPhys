@@ -1,0 +1,1558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ModelGPU8 – WebGPU Physics</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0a0a0f; overflow:hidden; font-family:'Segoe UI',sans-serif; }
+  canvas { display:block; }
+  #ui {
+    position:fixed; top:20px; left:20px; color:#fff;
+    background:rgba(255,255,255,0.06); backdrop-filter:blur(12px);
+    border:1px solid rgba(255,255,255,0.12); border-radius:16px;
+    padding:20px 24px; min-width:230px;
+    max-height:calc(100vh - 40px); overflow-y:auto; z-index:10;
+  }
+  #ui h2 { font-size:14px; font-weight:600; color:#34d399; margin-bottom:4px; letter-spacing:.08em; text-transform:uppercase; }
+  .badge { display:inline-block; background:linear-gradient(135deg,#059669,#10b981); color:#fff; font-size:9px; font-weight:700; padding:2px 7px; border-radius:20px; letter-spacing:.06em; margin-bottom:12px; }
+  .stat { display:flex; justify-content:space-between; font-size:13px; margin-bottom:8px; color:#cbd5e1; }
+  .stat span { color:#f8fafc; font-weight:600; }
+  .divider { border:none; border-top:1px solid rgba(255,255,255,0.08); margin:14px 0; }
+  .btn { display:block; width:100%; padding:9px 0; margin-top:8px; border:none; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer; transition:all .2s; }
+  .btn-primary { background:linear-gradient(135deg,#059669,#34d399); color:#fff; }
+  .btn-primary:hover { transform:translateY(-1px); box-shadow:0 4px 20px rgba(52,211,153,0.4); }
+  .btn-secondary { background:rgba(255,255,255,0.08); color:#e2e8f0; border:1px solid rgba(255,255,255,0.1); }
+  .btn-secondary:hover { background:rgba(255,255,255,0.13); }
+  label { font-size:12px; color:#94a3b8; display:block; margin-bottom:4px; margin-top:10px; }
+  input[type=range]  { width:100%; accent-color:#34d399; }
+  input[type=number] { width:100%; padding:7px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.07); color:#f8fafc; font-size:13px; margin-bottom:2px; }
+  .toggle-row { display:flex; align-items:center; justify-content:space-between; margin-top:10px; }
+  .toggle-label { font-size:12px; color:#94a3b8; }
+  .toggle { position:relative; width:36px; height:20px; background:rgba(255,255,255,0.12); border-radius:10px; cursor:pointer; transition:background .2s; border:none; flex-shrink:0; }
+  .toggle.on { background:#059669; }
+  .toggle::after { content:''; position:absolute; width:14px; height:14px; border-radius:50%; background:#fff; top:3px; left:3px; transition:left .2s; }
+  .toggle.on::after { left:19px; }
+  #status { font-size:11px; color:#6ee7b7; margin-top:4px; margin-bottom:10px; word-break:break-all; }
+  #nowebgpu { display:none; position:fixed; inset:0; background:rgba(10,10,15,.97); color:#fff; align-items:center; justify-content:center; flex-direction:column; text-align:center; padding:40px; z-index:100; }
+  #nowebgpu h2 { color:#f87171; font-size:22px; margin-bottom:12px; }
+  #nowebgpu p  { color:#94a3b8; max-width:500px; line-height:1.7; margin-bottom:8px; }
+  #nowebgpu code { background:rgba(255,255,255,0.08); padding:2px 8px; border-radius:5px; }
+  #controls { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); color:rgba(255,255,255,.35); font-size:12px; pointer-events:none; }
+  #vstats {
+    position:fixed; top:20px; right:20px;
+    background:rgba(255,255,255,0.06); backdrop-filter:blur(12px);
+    border:1px solid rgba(255,255,255,0.12); border-radius:16px;
+    padding:14px 18px; min-width:260px; z-index:10; color:#fff;
+    font-family:'Segoe UI',sans-serif;
+  }
+  #vstats h3 { font-size:12px; font-weight:600; color:#34d399; text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; }
+  .sstat { display:flex; justify-content:space-between; font-size:12px; color:#cbd5e1; margin-bottom:5px; }
+  .sstat span { color:#f8fafc; font-weight:600; font-variant-numeric:tabular-nums; }
+  #velCanvas { display:block; width:100%; height:90px; margin-top:10px; border-radius:8px; background:rgba(0,0,0,0.3); }
+  #perf {
+    position:fixed; bottom:20px; right:20px;
+    background:rgba(255,255,255,0.06); backdrop-filter:blur(12px);
+    border:1px solid rgba(255,255,255,0.12); border-radius:16px;
+    padding:14px 18px; min-width:260px; z-index:10; color:#fff;
+    font-family:'Segoe UI',sans-serif;
+  }
+  #perf h3 { font-size:12px; font-weight:600; color:#34d399; text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; }
+  .pstat { display:flex; justify-content:space-between; font-size:12px; color:#cbd5e1; margin-bottom:5px; }
+  .pstat span { color:#f8fafc; font-weight:600; font-variant-numeric:tabular-nums; }
+  #perfCanvas { display:block; width:100%; height:80px; margin-top:10px; border-radius:8px; background:rgba(0,0,0,0.3); }
+  .graph-legend { display:flex; gap:12px; margin-top:6px; font-size:10px; color:#94a3b8; }
+  .legend-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:4px; }
+</style>
+</head>
+<body>
+
+<div id="nowebgpu">
+  <h2>⚠ WebGPU Not Available</h2>
+  <p>This requires <strong>Chrome 113+</strong> or <strong>Edge 113+</strong> on desktop with WebGPU enabled.</p>
+  <p>Try: <code>chrome://flags/#enable-unsafe-webgpu</code> → Enable → Relaunch</p>
+</div>
+
+<div id="ui">
+  <h2>⚛ ModelGPU8</h2>
+  <div class="badge">⚡ GPU PHYSICS</div>
+  <div id="status">Initialising…</div>
+  <div class="stat">Objects <span id="count">0</span></div>
+  <div class="stat">FPS       <span id="fps">0</span></div>
+  <div class="stat">Collision <span id="collMode" style="color:#6ee7b7">O(n²)</span></div>
+  <hr class="divider">
+  <label>Gravity: <span id="gravLabel">9.8</span></label>
+  <input type="range" id="gravSlider" min="0" max="30" step="0.5" value="9.8">
+  <label>Restitution (bounce): <span id="restLabel">0.75</span></label>
+  <input type="range" id="restSlider" min="0" max="1" step="0.05" value="0.75">
+  <label>Friction: <span id="fricLabel">0.995</span></label>
+  <input type="range" id="fricSlider" min="0.95" max="1" step="0.001" value="0.995">
+  <div class="toggle-row">
+    <span class="toggle-label">Spatial Hash</span>
+    <button class="toggle" id="spatialToggle"></button>
+  </div>
+  <div id="spatialInfo" style="font-size:10px;color:#6ee7b7;margin-top:2px;margin-bottom:6px;display:none">O(n) — checks ~27 cells only</div>
+  <div class="toggle-row">
+    <span class="toggle-label">Show trails</span>
+    <button class="toggle" id="trailToggle"></button>
+  </div>
+  <div id="trailDurationRow" style="display:none">
+    <label>Trail duration: <span id="trailDurLabel">1.0</span>s</label>
+    <input type="range" id="trailDurSlider" min="0.1" max="10" step="0.1" value="1">
+    <div class="toggle-row" style="margin-top:8px">
+      <span class="toggle-label">Hide spheres (trails only)</span>
+      <button class="toggle" id="trailOnlyToggle"></button>
+    </div>
+  </div>
+  <hr class="divider">
+  <label>Min radius: <span id="minRadLabel">0.30</span></label>
+  <input type="range" id="minRadSlider" min="0.1" max="2.0" step="0.05" value="0.30">
+  <label>Max radius: <span id="maxRadLabel">0.75</span></label>
+  <input type="range" id="maxRadSlider" min="0.1" max="2.0" step="0.05" value="0.75">
+  <label>Mass scaling (radius^n): <span id="massExpLabel">3.0</span></label>
+  <input type="range" id="massExpSlider" min="1" max="5" step="0.5" value="3">
+  <hr class="divider">
+  <label>Number of objects to add</label>
+  <input type="number" id="addCount" value="500" min="1">
+  <button class="btn btn-primary"   id="addBtn">+ Add Objects</button>
+  <button class="btn btn-primary" id="addBoxBtn" style="background:linear-gradient(135deg,#b45309,#f59e0b)">+ Add Box Object</button>
+  <button class="btn btn-secondary" id="resetBtn">↺ Reset</button>
+  <button class="btn btn-secondary" id="explodeBtn">💥 Explode</button>
+</div>
+<div id="controls">Drag to rotate · Scroll to zoom · Right-drag to pan</div>
+<div id="vstats">
+  <h3>📈 Velocity Statistics</h3>
+  <div class="sstat">Mean speed    <span id="sMean">–</span></div>
+  <div class="sstat">Std deviation <span id="sStd">–</span></div>
+  <div class="sstat">Min speed     <span id="sMin">–</span></div>
+  <div class="sstat">Max speed     <span id="sMax">–</span></div>
+  <div class="sstat">Median        <span id="sMedian">–</span></div>
+  <div class="sstat">Total KE      <span id="sKE">–</span></div>
+  <canvas id="velCanvas" width="260" height="90"></canvas>
+</div>
+<div id="perf">
+  <h3>📊 Performance</h3>
+  <div class="pstat">Frame time   <span id="pFrameMs">–</span></div>
+  <div class="pstat">JS sim time  <span id="pSimMs">–</span></div>
+  <div class="pstat">Coll. checks <span id="pChecks">–</span></div>
+  <div class="pstat">Efficiency   <span id="pEffic">–</span></div>
+  <canvas id="perfCanvas" width="260" height="80"></canvas>
+  <div class="graph-legend">
+    <div><span class="legend-dot" style="background:#34d399"></span>Frame ms</div>
+    <div><span class="legend-dot" style="background:#f59e0b"></span>O(n²) mode</div>
+    <div><span class="legend-dot" style="background:#34d399"></span>Hash mode</div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ── Performance tracking ───────────────────────────────────────────────────
+// ── Velocity statistics ──────────────────────────────────────────────────
+let statsTimer = 0;
+function computeAndDrawStats(particles, n) {
+  if (!n) return;
+  const speeds = new Float32Array(n);
+  let sumS=0, sumKE=0, minS=Infinity, maxS=0;
+  for (let i=0; i<n; i++) {
+    const b = i*20;
+    const vx=particles[b+4], vy=particles[b+5], vz=particles[b+6], m=particles[b+7];
+    const s = Math.sqrt(vx*vx+vy*vy+vz*vz);
+    speeds[i]=s; sumS+=s; sumKE+=0.5*m*s*s;
+    if(s<minS) minS=s; if(s>maxS) maxS=s;
+  }
+  const mean = sumS/n;
+  let sumSq=0;
+  for (let i=0; i<n; i++) sumSq+=(speeds[i]-mean)**2;
+  const std = Math.sqrt(sumSq/n);
+  const sorted = Float32Array.from(speeds).sort();
+  const median = n%2===0 ? (sorted[n/2-1]+sorted[n/2])*0.5 : sorted[Math.floor(n/2)];
+  document.getElementById('sMean').textContent   = mean.toFixed(2)+' u/s';
+  document.getElementById('sStd').textContent    = std.toFixed(2)+' u/s';
+  document.getElementById('sMin').textContent    = minS.toFixed(2)+' u/s';
+  document.getElementById('sMax').textContent    = maxS.toFixed(2)+' u/s';
+  document.getElementById('sMedian').textContent = median.toFixed(2)+' u/s';
+  document.getElementById('sKE').textContent     = sumKE.toFixed(1);
+  const canvas=document.getElementById('velCanvas');
+  if (!canvas) return;
+  if (canvas.clientWidth>0) { canvas.width=canvas.clientWidth; canvas.height=canvas.clientHeight; }
+  const W=canvas.width, H=canvas.height, ctx2=canvas.getContext('2d');
+  ctx2.clearRect(0,0,W,H);
+  const BINS=40, bins=new Uint32Array(BINS);
+  const range=maxS-minS||1;
+  for (let i=0; i<n; i++) bins[Math.min(Math.floor(((speeds[i]-minS)/range)*BINS),BINS-1)]++;
+  const maxBin=Math.max(...bins,1);
+  for (let b=0; b<BINS; b++) {
+    const bh=(bins[b]/maxBin)*(H-14);
+    const f=b/BINS;
+    const r2=Math.round(f<0.5?f*2*100:100+(f-0.5)*2*155);
+    const g2=Math.round(f<0.25?f*4*200:f<0.75?200:200*(1-(f-0.75)*4));
+    const b2=Math.round(f<0.5?200*(1-f*2):0);
+    ctx2.fillStyle=`rgb(${r2},${g2},${b2})`;
+    ctx2.fillRect(b*(W/BINS), H-14-bh, Math.max(W/BINS-1,1), bh);
+  }
+  ctx2.fillStyle='rgba(255,255,255,0.4)'; ctx2.font='9px sans-serif';
+  ctx2.fillText(minS.toFixed(1),2,H-2);
+  ctx2.fillText(((minS+maxS)/2).toFixed(1),W/2-10,H-2);
+  ctx2.fillText(maxS.toFixed(1),W-24,H-2);
+  const mx=((mean-minS)/range)*W;
+  ctx2.strokeStyle='rgba(255,255,255,0.7)'; ctx2.lineWidth=1;
+  ctx2.setLineDash([3,3]);
+  ctx2.beginPath(); ctx2.moveTo(mx,0); ctx2.lineTo(mx,H-14); ctx2.stroke();
+  ctx2.setLineDash([]);
+}
+
+const PERF_HISTORY = 120; // frames of history
+const perfFrameMs  = new Float32Array(PERF_HISTORY); // total frame time
+const perfSimMs    = new Float32Array(PERF_HISTORY); // JS sim time
+let   perfIdx      = 0;
+let   perfFrameT0  = 0; // start of frame timestamp
+
+function perfStartFrame()  { perfFrameT0 = performance.now(); }
+function perfEndFrame(simMs) {
+  const total = performance.now() - perfFrameT0;
+  perfFrameMs[perfIdx] = total;
+  perfSimMs[perfIdx]   = simMs;
+  perfIdx = (perfIdx + 1) % PERF_HISTORY;
+}
+
+function perfCalcChecks(n, isSpatial) {
+  if (isSpatial) {
+    // Each particle checks ~27 cells * avg particles per cell
+    const avgPerCell = Math.max(1, n / 4096);
+    return Math.round(n * 27 * avgPerCell);
+  }
+  return Math.round(n * (n - 1) / 2);
+}
+
+function perfDraw(n, isSpatial) {
+  const canvas = document.getElementById('perfCanvas');
+  if (!canvas) return;
+  // Match canvas pixel size to its CSS display size so bars fill correctly
+  const cssW = canvas.clientWidth, cssH = canvas.clientHeight;
+  if (cssW > 0 && (canvas.width !== cssW || canvas.height !== cssH)) {
+    canvas.width = cssW; canvas.height = cssH;
+  }
+  const ctx2 = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx2.clearRect(0, 0, W, H);
+
+  // Find max across all recorded frames for scale — ignore zeros (unfilled slots)
+  let maxMs = 0;
+  for (let i = 0; i < PERF_HISTORY; i++) {
+    if (perfFrameMs[i] > 0) maxMs = Math.max(maxMs, perfFrameMs[i]);
+  }
+  // Scale to actual data — use a sensible minimum so the graph isn't flat
+  // when running very fast (e.g. 2ms frames → scale to 5ms so bars are visible)
+  maxMs = Math.max(maxMs * 1.2, 5);
+
+  // Grid lines — 3 evenly spaced horizontal lines with ms labels
+  ctx2.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx2.lineWidth = 1;
+  ctx2.font = '9px sans-serif';
+  [0.25, 0.5, 0.75, 1.0].forEach(frac => {
+    const ms = maxMs * frac;
+    const y  = H - frac * H;
+    ctx2.beginPath(); ctx2.moveTo(0, y); ctx2.lineTo(W, y); ctx2.stroke();
+    ctx2.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx2.fillText(ms.toFixed(1) + 'ms', 2, y - 2);
+  });
+
+  // Frame time bars
+  const barW = W / PERF_HISTORY;
+  for (let ii = 0; ii < PERF_HISTORY; ii++) {
+    const idx2 = (perfIdx + ii) % PERF_HISTORY;
+    const ms  = perfFrameMs[idx2];
+    if (ms === 0) continue;
+    const barH = Math.min((ms / maxMs) * H, H);
+    // Colour: green if fast, amber if struggling, red if over 33ms
+    const hue = ms < 20 ? '#34d399' : ms < 33 ? '#f59e0b' : '#f87171';
+    ctx2.fillStyle = isSpatial ? hue : hue.replace('34d399','60a5fa').replace('f59e0b','f59e0b');
+    ctx2.fillRect(ii * barW, H - barH, Math.max(barW - 0.5, 1), barH);
+  }
+
+  // Update text stats
+  // Average over last 30 frames
+  let sumF = 0, sumS = 0, cnt = 0;
+  for (let ii = 0; ii < 30; ii++) {
+    const idx2 = (perfIdx - 1 - ii + PERF_HISTORY) % PERF_HISTORY;
+    if (perfFrameMs[idx2] > 0) { sumF += perfFrameMs[idx2]; sumS += perfSimMs[idx2]; cnt++; }
+  }
+  const avgF = cnt > 0 ? sumF / cnt : 0;
+  const avgS = cnt > 0 ? sumS / cnt : 0;
+
+  document.getElementById('pFrameMs').textContent = avgF.toFixed(1) + ' ms';
+  document.getElementById('pSimMs').textContent   = avgS.toFixed(2) + ' ms';
+
+  const checks = perfCalcChecks(n, isSpatial);
+  const checksN2 = perfCalcChecks(n, false);
+  document.getElementById('pChecks').textContent =
+    checks >= 1e6 ? (checks/1e6).toFixed(1)+'M' :
+    checks >= 1e3 ? (checks/1e3).toFixed(0)+'K' : checks;
+
+  const effic = isSpatial && checksN2 > 0
+    ? Math.round((1 - checks / checksN2) * 100) + '% fewer checks'
+    : 'baseline';
+  document.getElementById('pEffic').textContent = effic;
+}
+
+const statusEl = document.getElementById('status');
+function setStatus(msg, ok=true){ statusEl.textContent=msg; statusEl.style.color=ok?'#6ee7b7':'#f87171'; }
+
+// ─── Config ────────────────────────────────────────────────────────────────
+const BOX     = { w:14, h:11, d:14 };
+const MAX_P   = 65536;
+// Particle layout (floats, stride=20):
+//  0-3:  px, py, pz, radius (0 for box)
+//  4-7:  vx, vy, vz, mass
+//  8-10: euler rot xyz (sphere) OR half-extents hx,hy,hz (box)
+//    11: type (0=sphere, 1=box)
+// 12-14: angular velocity
+//    15: pad
+// 16-19: r, g, b, a
+const FS      = 20; // floats per particle
+const TPTS    = 32;  // trail ring-buffer size per particle (reduced for large MAX_P)
+
+const PALETTE = [
+  [1.0,.42,.42],[1.0,.66,.30],[1.0,.83,.23],[.41,.86,.48],
+  [.30,.67,.97],[.85,.47,.97],[1.0,.53,.53],[.39,.90,.74],
+  [.45,.75,.98],[.97,.51,.67]
+];
+
+// ─── WGSL Shaders ─────────────────────────────────────────────────────────
+
+// Shared particle struct definition used in compute shaders
+const PARTICLE_STRUCT = `
+struct Uniforms {
+  dt          : f32,
+  gravity     : f32,
+  restitution : f32,
+  friction    : f32,
+  boxW        : f32,
+  boxH        : f32,
+  boxD        : f32,
+  count       : u32,
+};
+// Flat f32 array, FS=20 floats per particle
+@group(0) @binding(0) var<storage, read_write> particles : array<f32>;
+@group(0) @binding(1) var<uniform>             u         : Uniforms;
+`;
+
+const WGSL_INTEGRATE = PARTICLE_STRUCT + `
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let i = gid.x;
+  if (i >= u.count) { return; }
+  let b = i * 20u;
+  let r  = particles[b+3u];
+  let isBox = particles[b+11u] > 0.5;
+  var px = particles[b+0u]; var py = particles[b+1u]; var pz = particles[b+2u];
+  var vx = particles[b+4u]; var vy = particles[b+5u]; var vz = particles[b+6u];
+
+  // Gravity + integrate
+  vy -= u.gravity * u.dt;
+  px += vx * u.dt; py += vy * u.dt; pz += vz * u.dt;
+
+  // Friction
+  vx *= u.friction; vy *= u.friction; vz *= u.friction;
+
+  // Rotation (spheres only — box uses b+8,9,10 for half-extents)
+  if (!isBox) {
+    particles[b+8u]  += particles[b+12u] * u.dt;
+    particles[b+9u]  += particles[b+13u] * u.dt;
+    particles[b+10u] += particles[b+14u] * u.dt;
+    particles[b+12u] *= 0.999;
+    particles[b+13u] *= 0.999;
+    particles[b+14u] *= 0.999;
+  }
+
+  // Wall bounce — box uses half-extents as its effective radius per axis
+  if (isBox) {
+    let hx = particles[b+8u]; let hy = particles[b+9u]; let hz = particles[b+10u];
+    let bwx = u.boxW - hx; let bwy = u.boxH - hy; let bwz = u.boxD - hz;
+    if (px >  bwx) { px =  bwx; vx = -vx * u.restitution; }
+    if (px < -bwx) { px = -bwx; vx = -vx * u.restitution; }
+    if (py >  bwy) { py =  bwy; vy = -vy * u.restitution; }
+    if (py < -bwy) { py = -bwy; vy = -vy * u.restitution; vx *= 0.98; vz *= 0.98; }
+    if (pz >  bwz) { pz =  bwz; vz = -vz * u.restitution; }
+    if (pz < -bwz) { pz = -bwz; vz = -vz * u.restitution; }
+  } else {
+    let wx = u.boxW - r; let wy = u.boxH - r; let wz = u.boxD - r;
+    if (px >  wx) { px =  wx; vx = -vx * u.restitution; }
+    if (px < -wx) { px = -wx; vx = -vx * u.restitution; }
+    if (py >  wy) { py =  wy; vy = -vy * u.restitution; }
+    if (py < -wy) { py = -wy; vy = -vy * u.restitution; vx *= 0.98; vz *= 0.98; }
+    if (pz >  wz) { pz =  wz; vz = -vz * u.restitution; }
+    if (pz < -wz) { pz = -wz; vz = -vz * u.restitution; }
+  }
+
+  particles[b+0u]=px; particles[b+1u]=py; particles[b+2u]=pz;
+  particles[b+4u]=vx; particles[b+5u]=vy; particles[b+6u]=vz;
+}`;
+
+const WGSL_COLLIDE = PARTICLE_STRUCT + `
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let i = gid.x;
+  if (i >= u.count) { return; }
+  let bi = i * 20u;
+  if (particles[bi+11u] > 0.5) { return; } // skip box particles
+
+  var pix = particles[bi+0u]; var piy = particles[bi+1u]; var piz = particles[bi+2u];
+  let  ri  = particles[bi+3u];
+  var vix = particles[bi+4u]; var viy = particles[bi+5u]; var viz = particles[bi+6u];
+  let  mi  = particles[bi+7u];
+
+  for (var j = i + 1u; j < u.count; j++) {
+    let bj = j * 20u;
+    if (particles[bj+11u] > 0.5) { continue; } // skip box particles
+    let pjx = particles[bj+0u]; let pjy = particles[bj+1u]; let pjz = particles[bj+2u];
+    let rj  = particles[bj+3u];
+    let vjx = particles[bj+4u]; let vjy = particles[bj+5u]; let vjz = particles[bj+6u];
+    let mj  = particles[bj+7u];
+
+    let dx=pjx-pix; let dy=pjy-piy; let dz=pjz-piz;
+    let d2=dx*dx+dy*dy+dz*dz;
+    let md=ri+rj;
+    if (d2 >= md*md || d2 < 0.0001) { continue; }
+
+    let dist = sqrt(d2);
+    let nx=dx/dist; let ny=dy/dist; let nz=dz/dist;
+    let ov=(md-dist)*0.5;
+
+    pix-=nx*ov; piy-=ny*ov; piz-=nz*ov;
+    particles[bj+0u]=pjx+nx*ov; particles[bj+1u]=pjy+ny*ov; particles[bj+2u]=pjz+nz*ov;
+
+    let rvn=(vjx-vix)*nx+(vjy-viy)*ny+(vjz-viz)*nz;
+    if (rvn >= 0.0) { continue; }
+    let imp=-(1.0+u.restitution)*rvn/(1.0/mi+1.0/mj);
+    vix-=nx*(imp/mi); viy-=ny*(imp/mi); viz-=nz*(imp/mi);
+    particles[bj+4u]=vjx+nx*(imp/mj);
+    particles[bj+5u]=vjy+ny*(imp/mj);
+    particles[bj+6u]=vjz+nz*(imp/mj);
+  }
+  particles[bi+0u]=pix; particles[bi+1u]=piy; particles[bi+2u]=piz;
+  particles[bi+4u]=vix; particles[bi+5u]=viy; particles[bi+6u]=viz;
+}`;
+
+
+// ─── Spatial Hash Collision Shader ────────────────────────────────────────
+const WGSL_HASH_COLLIDE = `
+struct HUniforms {
+  dt          : f32,
+  gravity     : f32,
+  restitution : f32,
+  friction    : f32,
+  boxW        : f32,
+  boxH        : f32,
+  boxD        : f32,
+  count       : u32,
+}
+@group(0) @binding(0) var<storage, read_write> particles : array<f32>;
+@group(0) @binding(1) var<uniform>             u         : HUniforms;
+@group(0) @binding(2) var<storage, read>       cellStart : array<u32>;
+@group(0) @binding(3) var<storage, read>       cellEnd   : array<u32>;
+@group(0) @binding(4) var<storage, read>       sortedIdx : array<u32>;
+
+fn chash(ax : i32, ay : i32, az : i32) -> u32 {
+  let hx = bitcast<u32>(ax) * 73856093u;
+  let hy = bitcast<u32>(ay) * 19349663u;
+  let hz = bitcast<u32>(az) * 83492791u;
+  return (hx ^ hy ^ hz) & 65535u;
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let i = gid.x;
+  if (i >= u.count) { return; }
+  let bi = i * 20u;
+  if (particles[bi + 11u] > 0.5) { return; } // skip box particles
+
+  var pix : f32 = particles[bi + 0u];
+  var piy : f32 = particles[bi + 1u];
+  var piz : f32 = particles[bi + 2u];
+  let ri  : f32 = particles[bi + 3u];
+  var vix : f32 = particles[bi + 4u];
+  var viy : f32 = particles[bi + 5u];
+  var viz : f32 = particles[bi + 6u];
+  let mi  : f32 = particles[bi + 7u];
+
+  let ocx : i32 = i32(floor(pix / 1.9));
+  let ocy : i32 = i32(floor(piy / 1.9));
+  let ocz : i32 = i32(floor(piz / 1.9));
+
+  var ox : i32 = -1;
+  loop {
+    if (ox > 1) { break; }
+    var oy : i32 = -1;
+    loop {
+      if (oy > 1) { break; }
+      var oz : i32 = -1;
+      loop {
+        if (oz > 1) { break; }
+        let ch : u32 = chash(ocx + ox, ocy + oy, ocz + oz);
+        let cs : u32 = cellStart[ch];
+        let ce : u32 = cellEnd[ch];
+        var k  : u32 = cs;
+        loop {
+          if (k >= ce) { break; }
+          let j : u32 = sortedIdx[k];
+          if (j > i) {
+            let bj  = j * 20u;
+            let pjx : f32 = particles[bj + 0u];
+            let pjy : f32 = particles[bj + 1u];
+            let pjz : f32 = particles[bj + 2u];
+            let rj  : f32 = particles[bj + 3u];
+            let vjx : f32 = particles[bj + 4u];
+            let vjy : f32 = particles[bj + 5u];
+            let vjz : f32 = particles[bj + 6u];
+            let mj  : f32 = particles[bj + 7u];
+            let sepx : f32 = pjx - pix;
+            let sepy : f32 = pjy - piy;
+            let sepz : f32 = pjz - piz;
+            let d2   : f32 = sepx*sepx + sepy*sepy + sepz*sepz;
+            let md   : f32 = ri + rj;
+            if (d2 < md*md) { if (d2 > 0.0001) {
+              let dist : f32 = sqrt(d2);
+              let nx : f32 = sepx / dist;
+              let ny : f32 = sepy / dist;
+              let nz : f32 = sepz / dist;
+              let ov : f32 = (md - dist) * 0.5;
+              pix = pix - nx*ov;  piy = piy - ny*ov;  piz = piz - nz*ov;
+              particles[bj + 0u] = pjx + nx*ov;
+              particles[bj + 1u] = pjy + ny*ov;
+              particles[bj + 2u] = pjz + nz*ov;
+              let rvn : f32 = (vjx-vix)*nx + (vjy-viy)*ny + (vjz-viz)*nz;
+              if (rvn < 0.0) {
+                let imp : f32 = -(1.0 + u.restitution) * rvn / (1.0/mi + 1.0/mj);
+                vix = vix - nx*(imp/mi);
+                viy = viy - ny*(imp/mi);
+                viz = viz - nz*(imp/mi);
+                particles[bj + 4u] = vjx + nx*(imp/mj);
+                particles[bj + 5u] = vjy + ny*(imp/mj);
+                particles[bj + 6u] = vjz + nz*(imp/mj);
+              }
+            } }
+          }
+          k = k + 1u;
+        }
+        oz = oz + 1;
+      }
+      oy = oy + 1;
+    }
+    ox = ox + 1;
+  }
+  particles[bi + 0u] = pix;
+  particles[bi + 1u] = piy;
+  particles[bi + 2u] = piz;
+  particles[bi + 4u] = vix;
+  particles[bi + 5u] = viy;
+  particles[bi + 6u] = viz;
+}
+`;
+
+
+// ─── Box-Sphere Collision Shader ──────────────────────────────────────────
+const WGSL_BOX_SPHERE = `
+struct BUniforms { dt:f32, gravity:f32, restitution:f32, friction:f32, boxW:f32, boxH:f32, boxD:f32, count:u32 }
+@group(0) @binding(0) var<storage, read_write> particles : array<f32>;
+@group(0) @binding(1) var<uniform> u : BUniforms;
+
+fn qrot(v:vec3<f32>, qx:f32, qy:f32, qz:f32, qw:f32) -> vec3<f32> {
+  let uv=vec3<f32>(qx,qy,qz);
+  return 2.0*dot(uv,v)*uv+(qw*qw-dot(uv,uv))*v+2.0*qw*cross(uv,v);
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
+  let si = gid.x;
+  if (si >= u.count) { return; }
+  let bs = si * 20u;
+  let siIsBox = particles[bs+11u] > 0.5;
+
+  var spx=particles[bs+0u]; var spy=particles[bs+1u]; var spz=particles[bs+2u];
+  let sr=particles[bs+3u];
+  var svx=particles[bs+4u]; var svy=particles[bs+5u]; var svz=particles[bs+6u];
+  let sm=particles[bs+7u];
+  // Box half-extents for si (only used when siIsBox)
+  let shx=particles[bs+8u]; let shy=particles[bs+9u]; let shz=particles[bs+10u];
+
+  for (var bi2=0u; bi2<u.count; bi2++) {
+    if (bi2==si) { continue; }
+    let bb=bi2*20u;
+    if (particles[bb+11u] < 0.5) { continue; } // only check box particles
+
+    let bpx=particles[bb+0u]; let bpy=particles[bb+1u]; let bpz=particles[bb+2u];
+    let bhx=particles[bb+8u]; let bhy=particles[bb+9u]; let bhz=particles[bb+10u];
+    var bvx=particles[bb+4u]; var bvy=particles[bb+5u]; var bvz=particles[bb+6u];
+    let bm=particles[bb+7u];
+    var bwx=particles[bb+12u]; var bwy=particles[bb+13u]; var bwz=particles[bb+14u];
+
+    var nx:f32; var ny:f32; var nz:f32; var pen:f32;
+    var valid = false;
+
+    if (!siIsBox) {
+      // ── Sphere vs Box ────────────────────────────────────────────────────
+      let dx=spx-bpx; let dy=spy-bpy; let dz=spz-bpz;
+      let cx=clamp(dx,-bhx,bhx); let cy=clamp(dy,-bhy,bhy); let cz=clamp(dz,-bhz,bhz);
+      let ex=dx-cx; let ey=dy-cy; let ez=dz-cz;
+      let d2=ex*ex+ey*ey+ez*ez;
+      if (d2<sr*sr && d2>0.00001) {
+        let dist=sqrt(d2);
+        nx=ex/dist; ny=ey/dist; nz=ez/dist;
+        pen=sr-dist;
+        valid=true;
+      }
+    } else {
+      // ── Box vs Box (AABB overlap, push out on axis of least penetration) ─
+      let dx=spx-bpx; let dy=spy-bpy; let dz=spz-bpz;
+      let ox=shx+bhx-abs(dx); let oy=shy+bhy-abs(dy); let oz=shz+bhz-abs(dz);
+      if (ox>0.0 && oy>0.0 && oz>0.0) {
+        if (ox<=oy && ox<=oz) {
+          nx=select(-1.0,1.0,dx>=0.0); ny=0.0; nz=0.0; pen=ox;
+        } else if (oy<=ox && oy<=oz) {
+          nx=0.0; ny=select(-1.0,1.0,dy>=0.0); nz=0.0; pen=oy;
+        } else {
+          nx=0.0; ny=0.0; nz=select(-1.0,1.0,dz>=0.0); pen=oz;
+        }
+        valid=true;
+      }
+    }
+
+    if (!valid) { continue; }
+
+    let totalM=sm+bm; let sf=bm/totalM; let bf=sm/totalM;
+    spx+=nx*pen*sf; spy+=ny*pen*sf; spz+=nz*pen*sf;
+    particles[bb+0u]=bpx-nx*pen*bf;
+    particles[bb+1u]=bpy-ny*pen*bf;
+    particles[bb+2u]=bpz-nz*pen*bf;
+
+    let rvn=(svx-bvx)*nx+(svy-bvy)*ny+(svz-bvz)*nz;
+    if (rvn>=0.0) { continue; }
+
+    let Ix=bm*(bhy*bhy+bhz*bhz)/3.0;
+    let Iy=bm*(bhx*bhx+bhz*bhz)/3.0;
+    let Iz=bm*(bhx*bhx+bhy*bhy)/3.0;
+    // Contact point approx: face centre for box-box, closest point for sphere-box
+    let rx2=nx*pen*0.5; let ry2=ny*pen*0.5; let rz2=nz*pen*0.5;
+    let rxn_x=ry2*nz-rz2*ny; let rxn_y=rz2*nx-rx2*nz; let rxn_z=rx2*ny-ry2*nx;
+    let ang=(rxn_x*rxn_x)/Ix+(rxn_y*rxn_y)/Iy+(rxn_z*rxn_z)/Iz;
+    let imp=-(1.0+u.restitution)*rvn/(1.0/sm+1.0/bm+ang);
+
+    svx+=nx*(imp/sm); svy+=ny*(imp/sm); svz+=nz*(imp/sm);
+    particles[bb+4u]=bvx-nx*(imp/bm);
+    particles[bb+5u]=bvy-ny*(imp/bm);
+    particles[bb+6u]=bvz-nz*(imp/bm);
+    particles[bb+12u]=bwx+rxn_x*imp/Ix;
+    particles[bb+13u]=bwy+rxn_y*imp/Iy;
+    particles[bb+14u]=bwz+rxn_z*imp/Iz;
+  }
+  particles[bs+0u]=spx; particles[bs+1u]=spy; particles[bs+2u]=spz;
+  particles[bs+4u]=svx; particles[bs+5u]=svy; particles[bs+6u]=svz;
+}
+`;
+
+// Render shader — reads particle flat buffer, draws instanced unit sphere
+const WGSL_RENDER = `
+@group(0) @binding(0) var<storage, read> particles : array<f32>;
+
+struct Camera {
+  viewProj : mat4x4<f32>,
+  eye      : vec4<f32>,
+};
+@group(0) @binding(1) var<uniform> cam : Camera;
+
+struct VIn {
+  @location(0) lpos : vec3<f32>,
+  @location(1) lnrm : vec3<f32>,
+  @builtin(instance_index) inst : u32,
+};
+struct VOut {
+  @builtin(position) clip : vec4<f32>,
+  @location(0) wpos : vec3<f32>,
+  @location(1) wnrm : vec3<f32>,
+  @location(2) col  : vec3<f32>,
+};
+
+fn rotX(v:vec3<f32>, a:f32)->vec3<f32> { let c=cos(a);let s=sin(a); return vec3(v.x, c*v.y-s*v.z, s*v.y+c*v.z); }
+fn rotY(v:vec3<f32>, a:f32)->vec3<f32> { let c=cos(a);let s=sin(a); return vec3(c*v.x+s*v.z, v.y, -s*v.x+c*v.z); }
+fn rotZ(v:vec3<f32>, a:f32)->vec3<f32> { let c=cos(a);let s=sin(a); return vec3(c*v.x-s*v.y, s*v.x+c*v.y, v.z); }
+
+@vertex fn vs(in: VIn) -> VOut {
+  let b   = in.inst * 20u;
+  let pos = vec3<f32>(particles[b+0u], particles[b+1u], particles[b+2u]);
+  let rad = particles[b+3u];
+  let typ = particles[b+11u];
+  let hx  = particles[b+8u];
+  let hy  = particles[b+9u];
+  let hz  = particles[b+10u];
+  let rx  = particles[b+8u];
+  let ry  = particles[b+9u];
+  let rz  = particles[b+10u];
+  let col = vec3<f32>(particles[b+16u], particles[b+17u], particles[b+18u]);
+
+  var lp : vec3<f32>;
+  var ln = in.lnrm;
+  if (typ > 0.5) {
+    lp = vec3<f32>(in.lpos.x*hx, in.lpos.y*hy, in.lpos.z*hz);
+  } else {
+    lp = in.lpos * rad;
+  }
+  lp = rotX(lp,rx); lp = rotY(lp,ry); lp = rotZ(lp,rz);
+  ln = rotX(ln,rx); ln = rotY(ln,ry); ln = rotZ(ln,rz);
+
+  let wp = pos + lp;
+  var out : VOut;
+  out.clip = cam.viewProj * vec4<f32>(wp, 1.0);
+  out.wpos = wp;
+  out.wnrm = ln;
+  out.col  = col;
+  return out;
+}
+
+@fragment fn fs(in: VOut) -> @location(0) vec4<f32> {
+  let N  = normalize(in.wnrm);
+  let V  = normalize(cam.eye.xyz - in.wpos);
+
+  // Key light from upper-right-front
+  let L1   = normalize(vec3<f32>(0.5, 0.8, 0.6));
+  let H1   = normalize(L1 + V);
+  let d1   = max(dot(N, L1), 0.0);
+  let s1   = pow(max(dot(N, H1), 0.0), 40.0) * 0.45;
+
+  // Soft fill light from upper-left-back
+  let L2   = normalize(vec3<f32>(-0.6, 0.4, -0.5));
+  let d2   = max(dot(N, L2), 0.0) * 0.35;
+
+  // Rim light from below-back to prevent total blackness
+  let L3   = normalize(vec3<f32>(0.0, -0.5, -1.0));
+  let d3   = max(dot(N, L3), 0.0) * 0.15;
+
+  let ambient = 0.20;
+  let light   = ambient + d1*0.75 + d2 + d3;
+  return vec4<f32>(in.col * light + s1, 1.0);
+}`;
+
+const WGSL_TRAIL = `
+// Trail point: x,y,z,timestamp, r,g,b,pad  (8 floats each)
+@group(0) @binding(0) var<storage, read> trail : array<f32>;
+struct Camera { viewProj : mat4x4<f32>, eye : vec4<f32> };
+@group(0) @binding(1) var<uniform> cam : Camera;
+struct TP { now:f32, duration:f32, pad0:f32, pad1:f32 };
+@group(0) @binding(2) var<uniform> tp  : TP;
+
+struct VOut {
+  @builtin(position) clip : vec4<f32>,
+  @location(0) col : vec4<f32>,
+};
+
+@vertex fn vs(@builtin(vertex_index) vi : u32) -> VOut {
+  let b    = vi * 8u;
+  let wpos = vec3<f32>(trail[b+0u], trail[b+1u], trail[b+2u]);
+  let t    = trail[b+3u];
+  let col  = vec3<f32>(trail[b+4u], trail[b+5u], trail[b+6u]);
+  let age  = clamp((tp.now - t) / tp.duration, 0.0, 1.0);
+  let a    = 1.0 - age;
+  var out : VOut;
+  out.clip = cam.viewProj * vec4<f32>(wpos, 1.0);
+  out.col  = vec4<f32>(col * a, a);
+  return out;
+}
+@fragment fn fs(in: VOut) -> @location(0) vec4<f32> { return in.col; }`;
+
+// ─── Wireframe box shader ──────────────────────────────────────────────────
+const WGSL_WIRE_TEMPLATE = `
+struct Camera { viewProj : mat4x4<f32>, eye : vec4<f32> };
+@group(0) @binding(0) var<uniform> cam : Camera;
+
+@vertex fn vs(@builtin(vertex_index) vi : u32) -> @builtin(position) vec4<f32> {
+  // 8 corners of the box, then we index into them with a line-list
+  // Corners: ±W, ±H, ±D
+  var c = array<vec3<f32>, 8>(
+    vec3<f32>(-BOX_W, -BOX_H, -BOX_D),
+    vec3<f32>( BOX_W, -BOX_H, -BOX_D),
+    vec3<f32>( BOX_W,  BOX_H, -BOX_D),
+    vec3<f32>(-BOX_W,  BOX_H, -BOX_D),
+    vec3<f32>(-BOX_W, -BOX_H,  BOX_D),
+    vec3<f32>( BOX_W, -BOX_H,  BOX_D),
+    vec3<f32>( BOX_W,  BOX_H,  BOX_D),
+    vec3<f32>(-BOX_W,  BOX_H,  BOX_D),
+  );
+  // 12 edges = 24 indices (line-list)
+  var idx = array<u32, 24>(
+    0u,1u, 1u,2u, 2u,3u, 3u,0u,  // back face
+    4u,5u, 5u,6u, 6u,7u, 7u,4u,  // front face
+    0u,4u, 1u,5u, 2u,6u, 3u,7u   // connecting edges
+  );
+  let pos = c[idx[vi]];
+  return cam.viewProj * vec4<f32>(pos, 1.0);
+}
+
+@fragment fn fs() -> @location(0) vec4<f32> {
+  return vec4<f32>(0.3, 0.2, 0.6, 0.55);  // purple, semi-transparent
+}`;
+
+// ─── Math helpers ──────────────────────────────────────────────────────────
+function makePerspective(fovY, aspect, near, far) {
+  const f  = 1.0 / Math.tan(fovY * 0.5);
+  const nf = 1.0 / (near - far);
+  // Column-major (each group of 4 = one column)
+  return new Float32Array([
+    f/aspect,          0,                  0,  0,   // col 0
+    0,                 f,                  0,  0,   // col 1
+    0,                 0,    (far+near)*nf, -1,   // col 2
+    0,                 0, 2*far*near*nf,    0,   // col 3
+  ]);
+}
+
+function makeLookAt(eye, target, up) {
+  const z = norm3(sub3(eye, target));   // forward (reversed)
+  const x = norm3(cross3(up, z));       // right
+  const y = cross3(z, x);               // up (recomputed)
+  // Column-major: col0=x-axis, col1=y-axis, col2=z-axis, col3=translation
+  return new Float32Array([
+    x[0], x[1], x[2], 0,                 // col 0
+    y[0], y[1], y[2], 0,                 // col 1
+    z[0], z[1], z[2], 0,                 // col 2
+    -dot3(x,eye), -dot3(y,eye), -dot3(z,eye), 1,  // col 3
+  ]);
+}
+
+function mul4x4(a, b) {
+  // Both a and b are column-major Float32Arrays
+  // Result[col][row] = sum_k a[k][row] * b[col][k]
+  const o = new Float32Array(16);
+  for (let col=0; col<4; col++)
+    for (let row=0; row<4; row++) {
+      let s = 0;
+      for (let k=0; k<4; k++) s += a[k*4+row] * b[col*4+k];
+      o[col*4+row] = s;
+    }
+  return o;
+}
+
+const sub3  = (a,b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+const dot3  = (a,b) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross3= (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const norm3 = a => { const l=Math.sqrt(dot3(a,a))||1; return [a[0]/l,a[1]/l,a[2]/l]; };
+
+// ─── Build cube mesh ──────────────────────────────────────────────────────
+function buildCube() {
+  const pos=[], nrm=[], idx=[];
+  const faces=[
+    {n:[0,0,1], u:[1,0,0], v:[0,1,0]},
+    {n:[0,0,-1],u:[-1,0,0],v:[0,1,0]},
+    {n:[1,0,0], u:[0,0,-1],v:[0,1,0]},
+    {n:[-1,0,0],u:[0,0,1], v:[0,1,0]},
+    {n:[0,1,0], u:[1,0,0], v:[0,0,-1]},
+    {n:[0,-1,0],u:[1,0,0], v:[0,0,1]},
+  ];
+  let vi=0;
+  for (const {n,u,v} of faces) {
+    for (const [su,sv] of [[-1,-1],[1,-1],[1,1],[-1,1]]) {
+      pos.push(n[0]+su*u[0]+sv*v[0], n[1]+su*u[1]+sv*v[1], n[2]+su*u[2]+sv*v[2]);
+      nrm.push(n[0],n[1],n[2]);
+    }
+    idx.push(vi,vi+1,vi+2, vi,vi+2,vi+3); vi+=4;
+  }
+  return {pos:new Float32Array(pos), nrm:new Float32Array(nrm), idx:new Uint16Array(idx)};
+}
+
+// ─── Build sphere mesh (interleaved pos+normal) ────────────────────────────
+function buildSphere(stacks, slices) {
+  const pos=[], nrm=[], idx=[];
+  for (let i=0; i<=stacks; i++) {
+    const phi = Math.PI * i / stacks;
+    const sp = Math.sin(phi), cp = Math.cos(phi);
+    for (let j=0; j<=slices; j++) {
+      const theta = 2*Math.PI * j / slices;
+      const x = sp*Math.cos(theta), y = cp, z = sp*Math.sin(theta);
+      pos.push(x,y,z); nrm.push(x,y,z);
+    }
+  }
+  for (let i=0; i<stacks; i++)
+    for (let j=0; j<slices; j++) {
+      const a=i*(slices+1)+j, b=a+slices+1;
+      idx.push(a,b,a+1, b,b+1,a+1);
+    }
+  return {
+    pos: new Float32Array(pos),
+    nrm: new Float32Array(nrm),
+    idx: new Uint16Array(idx),
+  };
+}
+
+// ─── Main ──────────────────────────────────────────────────────────────────
+async function main() {
+  // WebGPU availability
+  if (!navigator.gpu) {
+    document.getElementById('nowebgpu').style.display = 'flex'; return;
+  }
+
+  let adapter, device;
+  try {
+    adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    if (!adapter) { document.getElementById('nowebgpu').style.display='flex'; return; }
+    device  = await adapter.requestDevice();
+  } catch(e) {
+    setStatus('GPU init failed: ' + e.message, false); return;
+  }
+
+  try {
+    const info = await adapter.requestAdapterInfo();
+    setStatus(info?.description || info?.vendor || 'WebGPU active');
+  } catch(_) { setStatus('WebGPU active'); }
+
+  device.lost.then(i => setStatus('Device lost: ' + i.message, false));
+
+  // ── Canvas ────────────────────────────────────────────────────────────────
+  const canvas = document.createElement('canvas');
+  canvas.width = innerWidth; canvas.height = innerHeight;
+  document.body.insertBefore(canvas, document.getElementById('ui'));
+  const ctx = canvas.getContext('webgpu');
+  const fmt = navigator.gpu.getPreferredCanvasFormat();
+  ctx.configure({ device, format: fmt, alphaMode: 'opaque' });
+
+  const makeDepth = () => device.createTexture({
+    size: [canvas.width, canvas.height],
+    format: 'depth24plus',
+    usage: GPUTextureUsage.RENDER_ATTACHMENT,
+  });
+  let depthTex = makeDepth();
+
+  // ── Sphere mesh ───────────────────────────────────────────────────────────
+  const sph = buildSphere(16, 24);
+
+  // Two separate vertex buffers: positions, normals
+  const posVBuf = device.createBuffer({ size: sph.pos.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+  const nrmVBuf = device.createBuffer({ size: sph.nrm.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+  const idxBuf  = device.createBuffer({ size: sph.idx.byteLength, usage: GPUBufferUsage.INDEX  | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(posVBuf, 0, sph.pos);
+  device.queue.writeBuffer(nrmVBuf, 0, sph.nrm);
+  device.queue.writeBuffer(idxBuf,  0, sph.idx);
+
+  // ── Cube mesh buffers ──────────────────────────────────────────────────────
+  const cub = buildCube();
+  const cubPosBuf = device.createBuffer({size:cub.pos.byteLength, usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
+  const cubNrmBuf = device.createBuffer({size:cub.nrm.byteLength, usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
+  const cubIdxBuf = device.createBuffer({size:cub.idx.byteLength, usage:GPUBufferUsage.INDEX|GPUBufferUsage.COPY_DST});
+  device.queue.writeBuffer(cubPosBuf, 0, cub.pos);
+  device.queue.writeBuffer(cubNrmBuf, 0, cub.nrm);
+  device.queue.writeBuffer(cubIdxBuf, 0, cub.idx);
+
+  // ── GPU buffers ───────────────────────────────────────────────────────────
+  const pBufBytes = MAX_P * FS * 4; // particle storage
+  const pBuf = device.createBuffer({ size: pBufBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+  const rBuf = device.createBuffer({ size: pBufBytes, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+
+  // Uniforms: 8 floats = 32 bytes (dt,grav,rest,fric,boxW,boxH,boxD,count_as_u32)
+  const uBuf = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+
+  // Camera: mat4 (64 bytes) + vec4 eye (16 bytes) = 80 bytes
+  const camBuf = device.createBuffer({ size: 80, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+
+  // Trail: TPTS points * MAX_P particles * 8 floats * 4 bytes
+  const trailBytes = TPTS * MAX_P * 8 * 4;
+  const trailBuf  = device.createBuffer({ size: trailBytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const trailUBuf = device.createBuffer({ size: 16,         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+
+  const cpuP      = new Float32Array(MAX_P * FS);
+  const trailCPU  = new Float32Array(TPTS * MAX_P * 8);
+  const trailHead = new Int32Array(MAX_P);
+  const trailCnt  = new Int32Array(MAX_P);
+  const trailLast = new Float32Array(MAX_P * 3).fill(1e9);
+
+  // ── Pipelines ─────────────────────────────────────────────────────────────
+  // Compute bind group layout: [storage, uniform]
+  const computeBGL = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+  ]});
+
+  const integratePL = device.createComputePipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [computeBGL] }),
+    compute: { module: device.createShaderModule({ code: WGSL_INTEGRATE }), entryPoint: 'main' },
+  });
+  const collidePL = device.createComputePipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [computeBGL] }),
+    compute: { module: device.createShaderModule({ code: WGSL_COLLIDE   }), entryPoint: 'main' },
+  });
+  const computeBG = device.createBindGroup({ layout: computeBGL, entries: [
+    { binding: 0, resource: { buffer: pBuf } },
+    { binding: 1, resource: { buffer: uBuf } },
+  ]});
+
+  // Render bind group layout: [read-only-storage, uniform]
+  const renderBGL = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.VERTEX,                       buffer: { type: 'read-only-storage' } },
+    { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+  ]});
+
+  const renMod = device.createShaderModule({ code: WGSL_RENDER });
+  const renderPL = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [renderBGL] }),
+    vertex: {
+      module: renMod, entryPoint: 'vs',
+      buffers: [
+        { arrayStride: 12, stepMode: 'vertex', attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' }] },
+        { arrayStride: 12, stepMode: 'vertex', attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x3' }] },
+      ],
+    },
+    fragment: { module: renMod, entryPoint: 'fs', targets: [{ format: fmt }] },
+    primitive: { topology: 'triangle-list', cullMode: 'back' },
+    depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+  });
+  const renderBG = device.createBindGroup({ layout: renderBGL, entries: [
+    { binding: 0, resource: { buffer: pBuf   } },
+    { binding: 1, resource: { buffer: camBuf } },
+  ]});
+
+  // Trail pipeline
+  const trailBGL = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+    { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+    { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+  ]});
+  const trailMod = device.createShaderModule({ code: WGSL_TRAIL });
+  const trailPL  = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [trailBGL] }),
+    vertex:   { module: trailMod, entryPoint: 'vs' },
+    fragment: { module: trailMod, entryPoint: 'fs', targets: [{ format: fmt, blend: {
+      color: { srcFactor:'src-alpha', dstFactor:'one-minus-src-alpha', operation:'add' },
+      alpha: { srcFactor:'one',       dstFactor:'one-minus-src-alpha', operation:'add' },
+    }}]},
+    primitive:    { topology: 'line-strip' },
+    depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'less-equal' },
+  });
+  const trailBG = device.createBindGroup({ layout: trailBGL, entries: [
+    { binding: 0, resource: { buffer: trailBuf  } },
+    { binding: 1, resource: { buffer: camBuf    } },
+    { binding: 2, resource: { buffer: trailUBuf } },
+  ]});
+
+  // ── Wireframe box pipeline ───────────────────────────────────────────────
+  const wireWGSL = WGSL_WIRE_TEMPLATE
+    .replaceAll('BOX_W', BOX.w.toFixed(1) + 'f')
+    .replaceAll('BOX_H', BOX.h.toFixed(1) + 'f')
+    .replaceAll('BOX_D', BOX.d.toFixed(1) + 'f');
+  const wireBGL = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+  ]});
+  const wireMod = device.createShaderModule({ code: wireWGSL });
+  const wirePL  = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [wireBGL] }),
+    vertex:   { module: wireMod, entryPoint: 'vs' },
+    fragment: { module: wireMod, entryPoint: 'fs', targets: [{ format: fmt, blend: {
+      color: { srcFactor:'src-alpha', dstFactor:'one-minus-src-alpha', operation:'add' },
+      alpha: { srcFactor:'one',       dstFactor:'one-minus-src-alpha', operation:'add' },
+    }}]},
+    primitive:    { topology: 'line-list' },
+    depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'less-equal' },
+  });
+  const wireBG = device.createBindGroup({ layout: wireBGL, entries: [
+    { binding: 0, resource: { buffer: camBuf } },
+  ]});
+
+
+  // ── Spatial hash ──────────────────────────────────────────────────────────
+  const SH_TABLE  = 65536;
+  const shPairs   = new Uint32Array(MAX_P);
+  const shCount   = new Uint32Array(SH_TABLE);
+  const shStart   = new Uint32Array(SH_TABLE);
+  const shEnd     = new Uint32Array(SH_TABLE);
+  const shSorted  = new Uint32Array(MAX_P);
+  const shMirror  = new Float32Array(MAX_P * FS);
+  let   shMirrorN = 0;
+
+  const shStartBuf = device.createBuffer({ size: SH_TABLE*4, usage: GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST });
+  const shEndBuf   = device.createBuffer({ size: SH_TABLE*4, usage: GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST });
+  const shSortBuf  = device.createBuffer({ size: MAX_P*4,    usage: GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST });
+  const shRBuf     = device.createBuffer({ size: MAX_P*FS*4, usage: GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST });
+  let   shRPending = false, shRSnap = 0;
+
+  const shBGL = device.createBindGroupLayout({ entries: [
+    { binding:0, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'} },
+    { binding:1, visibility:GPUShaderStage.COMPUTE, buffer:{type:'uniform'} },
+    { binding:2, visibility:GPUShaderStage.COMPUTE, buffer:{type:'read-only-storage'} },
+    { binding:3, visibility:GPUShaderStage.COMPUTE, buffer:{type:'read-only-storage'} },
+    { binding:4, visibility:GPUShaderStage.COMPUTE, buffer:{type:'read-only-storage'} },
+  ]});
+
+  let shPL = null, shBG = null;
+  {
+    const shMod = device.createShaderModule({ code: WGSL_HASH_COLLIDE });
+    const info  = await shMod.getCompilationInfo();
+    const errs  = info.messages.filter(m => m.type === 'error');
+    if (errs.length > 0) {
+      const msg = errs.map(m => 'L' + m.lineNum + ':' + m.linePos + ' ' + m.message).join(' | ');
+      setStatus('WGSL error: ' + msg, false);
+      console.error('WGSL errors:', errs);
+    } else {
+      try {
+        shPL = await device.createComputePipelineAsync({
+          layout: device.createPipelineLayout({ bindGroupLayouts:[shBGL] }),
+          compute: { module: shMod, entryPoint: 'main' },
+        });
+        shBG = device.createBindGroup({ layout: shBGL, entries:[
+          { binding:0, resource:{ buffer:pBuf       } },
+          { binding:1, resource:{ buffer:uBuf       } },
+          { binding:2, resource:{ buffer:shStartBuf } },
+          { binding:3, resource:{ buffer:shEndBuf   } },
+          { binding:4, resource:{ buffer:shSortBuf  } },
+        ]});
+      } catch(e) {
+        setStatus('Hash pipeline error: ' + e.message, false);
+        console.error('Pipeline error:', e);
+      }
+    }
+  }
+
+  // ── Box-sphere collision pipeline ────────────────────────────────────────
+  const boxBGL = device.createBindGroupLayout({ entries:[
+    {binding:0, visibility:GPUShaderStage.COMPUTE, buffer:{type:'storage'}},
+    {binding:1, visibility:GPUShaderStage.COMPUTE, buffer:{type:'uniform'}},
+  ]});
+  let boxPL=null, boxBG=null;
+  {
+    const mod=device.createShaderModule({code:WGSL_BOX_SPHERE});
+    const info=await mod.getCompilationInfo();
+    const errs=info.messages.filter(m=>m.type==='error');
+    if (errs.length>0) { setStatus('Box shader: '+errs.map(m=>'L'+m.lineNum+' '+m.message).join(' | '),false); }
+    else {
+      try {
+        boxPL = await device.createComputePipelineAsync({
+          layout: device.createPipelineLayout({bindGroupLayouts:[boxBGL]}),
+          compute:{module:mod, entryPoint:'main'},
+        });
+        boxBG = device.createBindGroup({layout:boxBGL, entries:[
+          {binding:0, resource:{buffer:pBuf}},
+          {binding:1, resource:{buffer:uBuf}},
+        ]});
+      } catch(e) { setStatus('Box pipeline: '+e.message,false); }
+    }
+  }
+
+  function shScheduleReadback(enc) {
+    if (shRPending || numP === 0) return;
+    shRPending = true; shRSnap = numP;
+    enc.copyBufferToBuffer(pBuf, 0, shRBuf, 0, shRSnap * FS * 4);
+  }
+  function shProcessReadback() {
+    if (!shRPending || shRBuf.mapState === 'pending') return;
+    shRBuf.mapAsync(GPUMapMode.READ, 0, shRSnap*FS*4).then(() => {
+      shMirror.set(new Float32Array(shRBuf.getMappedRange(0, shRSnap*FS*4)));
+      shMirrorN = shRSnap;
+      shRBuf.unmap(); shRPending = false;
+    }).catch(() => { shRPending = false; });
+  }
+  function shBuild() {
+    const n = shMirrorN; if (n === 0) return;
+    shCount.fill(0);
+    for (let i = 0; i < n; i++) {
+      const b = i*FS;
+      const cx = Math.floor(shMirror[b]   / 1.9);
+      const cy = Math.floor(shMirror[b+1] / 1.9);
+      const cz = Math.floor(shMirror[b+2] / 1.9);
+      const h  = (((cx*73856093 ^ cy*19349663 ^ cz*83492791) >>> 0)) & 0xFFFF;
+      shPairs[i] = (h << 16) | (i & 0xFFFF);
+      shCount[h]++;
+    }
+    let off = 0;
+    for (let h = 0; h < SH_TABLE; h++) { shStart[h]=off; off+=shCount[h]; shEnd[h]=off; }
+    const ins = new Uint32Array(shStart);
+    for (let i = 0; i < n; i++) { const h=shPairs[i]>>>16; shSorted[ins[h]++]=i; }
+    device.queue.writeBuffer(shStartBuf, 0, shStart);
+    device.queue.writeBuffer(shEndBuf,   0, shEnd);
+    device.queue.writeBuffer(shSortBuf,  0, shSorted, 0, n);
+  }
+
+  // ── Sim state ─────────────────────────────────────────────────────────────
+  let numP = 0;
+  let trailEnabled=false, trailDuration=1.0, trailOnly=false;
+  let numBoxes=0;
+  let MIN_RAD=0.30, MAX_RAD=0.75, MASS_EXP=3.0;
+  let spatialHash=false;
+  let GRAVITY=9.8, RESTITUTION=0.75, FRICTION=0.995;
+
+  function spawn(n) {
+    const end = Math.min(numP + n, MAX_P);
+    for (let i = numP; i < end; i++) {
+      const r   = MIN_RAD + Math.random() * Math.max(0, MAX_RAD - MIN_RAD);
+      const col = PALETTE[Math.floor(Math.random() * PALETTE.length)];
+      const b   = i * FS;
+      cpuP[b+0]  = (Math.random()-0.5) * BOX.w * 1.6;
+      cpuP[b+1]  = BOX.h*0.3 + Math.random()*BOX.h*0.6;
+      cpuP[b+2]  = (Math.random()-0.5) * BOX.d * 1.6;
+      cpuP[b+3]  = r;
+      cpuP[b+4]  = (Math.random()-0.5)*8;
+      cpuP[b+5]  = (Math.random()-0.5)*4;
+      cpuP[b+6]  = (Math.random()-0.5)*8;
+      cpuP[b+7]  = Math.pow(r, MASS_EXP);
+      cpuP[b+8]  = Math.random()*Math.PI*2;
+      cpuP[b+9]  = Math.random()*Math.PI*2;
+      cpuP[b+10] = Math.random()*Math.PI*2;
+      cpuP[b+11] = 0;
+      cpuP[b+12] = (Math.random()-0.5)*3;
+      cpuP[b+13] = (Math.random()-0.5)*3;
+      cpuP[b+14] = (Math.random()-0.5)*3;
+      cpuP[b+15] = 0;
+      cpuP[b+16] = col[0]; cpuP[b+17]=col[1]; cpuP[b+18]=col[2]; cpuP[b+19]=1;
+    }
+    numP = end;
+    // Write only the new particles (byteOffset, byteLength)
+    device.queue.writeBuffer(pBuf, 0, cpuP, 0, numP * FS);
+    shMirror.set(cpuP.subarray(0, numP * FS)); shMirrorN = numP; // writeBuffer(buf, bufOffset, data, dataOffset_in_elements, length_in_elements)
+  }
+
+  function spawnBox(hx=2.0, hy=1.0, hz=1.5) {
+    if (numP >= MAX_P) return;
+    const i=numP, b=i*FS;
+    cpuP[b+0]=0; cpuP[b+1]=0; cpuP[b+2]=0;  // centre
+    cpuP[b+3]=0;                               // radius=0 (not sphere)
+    cpuP[b+4]=0; cpuP[b+5]=0; cpuP[b+6]=0;  // stationary
+    cpuP[b+7]=hx*hy*hz*8;                     // mass
+    cpuP[b+8]=hx; cpuP[b+9]=hy; cpuP[b+10]=hz; // half-extents
+    cpuP[b+11]=1;                              // type=box
+    cpuP[b+12]=0; cpuP[b+13]=0; cpuP[b+14]=0;
+    cpuP[b+15]=0;
+    cpuP[b+16]=0.9; cpuP[b+17]=0.9; cpuP[b+18]=1.0; cpuP[b+19]=1; // silver
+    numP++; numBoxes++;
+    device.queue.writeBuffer(pBuf, 0, cpuP, 0, numP*FS);
+    shMirror.set(cpuP.subarray(0, numP*FS)); shMirrorN=numP;
+  }
+
+  function resetSim() {
+    numP = 0; numBoxes=0; cpuP.fill(0);
+    trailCPU.fill(0); trailHead.fill(0); trailCnt.fill(0); trailLast.fill(1e9);
+    spawn(100);
+  }
+
+  // ── Uniforms ──────────────────────────────────────────────────────────────
+  function writeUniforms(dt) {
+    const d = new Float32Array(8);
+    d[0]=dt; d[1]=GRAVITY; d[2]=RESTITUTION; d[3]=FRICTION;
+    d[4]=BOX.w; d[5]=BOX.h; d[6]=BOX.d;
+    // Write count as u32 into the same buffer at offset 7*4=28
+    new Uint32Array(d.buffer)[7] = numP;
+    device.queue.writeBuffer(uBuf, 0, d);
+  }
+
+  // ── Camera ────────────────────────────────────────────────────────────────
+  const cam = { theta: 0.5, phi: 0.9, r: 38, pan: [0, 4, 0] };
+  function getEye() {
+    return [
+      cam.r * Math.sin(cam.phi) * Math.sin(cam.theta),
+      cam.r * Math.cos(cam.phi),
+      cam.r * Math.sin(cam.phi) * Math.cos(cam.theta),
+    ];
+  }
+  function writeCamera() {
+    const eye  = getEye();
+    const view = makeLookAt(eye, cam.pan, [0,1,0]);
+    const proj = makePerspective(Math.PI/3, canvas.width/canvas.height, 0.1, 300);
+    const vp   = mul4x4(proj, view);
+    const d    = new Float32Array(20);
+    d.set(vp, 0);
+    d[16]=eye[0]; d[17]=eye[1]; d[18]=eye[2]; d[19]=1;
+    device.queue.writeBuffer(camBuf, 0, d);
+  }
+
+  // ── Orbit controls ────────────────────────────────────────────────────────
+  let drag=false, rclick=false, mx=0, my=0;
+  canvas.addEventListener('mousedown', e => { drag=true; rclick=e.button===2; mx=e.clientX; my=e.clientY; });
+  window.addEventListener('mouseup',   () => drag=false);
+  window.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const dx=e.clientX-mx, dy=e.clientY-my; mx=e.clientX; my=e.clientY;
+    if (!rclick) {
+      cam.theta -= dx*0.007;
+      cam.phi    = Math.max(0.05, Math.min(Math.PI-0.05, cam.phi + dy*0.007));
+    } else {
+      const eye   = getEye();
+      const fwd   = norm3(sub3(cam.pan, eye));
+      const right = norm3(cross3(fwd, [0,1,0]));
+      const up    = cross3(right, fwd);
+      for (let k=0; k<3; k++) cam.pan[k] -= right[k]*dx*0.04 - up[k]*dy*0.04;
+    }
+  });
+  canvas.addEventListener('wheel', e => { cam.r = Math.max(5, Math.min(120, cam.r + e.deltaY*0.05)); });
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+  // ── Trail readback ────────────────────────────────────────────────────────
+  let readPending = false;
+
+  let readbackNumP = 0; // capture numP at time of scheduling
+  function scheduleReadback(enc) {
+    if (readPending || !trailEnabled || numP===0) return;
+    readPending = true;
+    readbackNumP = numP; // snapshot so processReadback uses the same count
+    enc.copyBufferToBuffer(pBuf, 0, rBuf, 0, readbackNumP * FS * 4);
+  }
+
+  function processReadback(now) {
+    if (!readPending || rBuf.mapState === 'pending') return;
+    const snapNumP = readbackNumP; // use the snapshotted count
+    const snapBytes = snapNumP * FS * 4;
+    rBuf.mapAsync(GPUMapMode.READ, 0, snapBytes).then(() => {
+      const d = new Float32Array(rBuf.getMappedRange(0, snapBytes));
+      let dirty = false;
+      for (let i=0; i<snapNumP; i++) {
+        const b  = i*FS;
+        const px=d[b], py=d[b+1], pz=d[b+2];
+        const lx=trailLast[i*3], ly=trailLast[i*3+1], lz=trailLast[i*3+2];
+        if ((px-lx)**2+(py-ly)**2+(pz-lz)**2 < 0.01) continue;
+        const slot = trailHead[i];
+        const off  = (i*TPTS + slot) * 8;
+        trailCPU[off+0]=px; trailCPU[off+1]=py; trailCPU[off+2]=pz; trailCPU[off+3]=now;
+        trailCPU[off+4]=d[b+16]; trailCPU[off+5]=d[b+17]; trailCPU[off+6]=d[b+18]; trailCPU[off+7]=1;
+        trailHead[i] = (slot+1) % TPTS;
+        trailCnt[i]  = Math.min(trailCnt[i]+1, TPTS);
+        trailLast[i*3]=px; trailLast[i*3+1]=py; trailLast[i*3+2]=pz;
+        dirty = true;
+      }
+      rBuf.unmap();
+      readPending = false;
+      if (dirty) device.queue.writeBuffer(trailBuf, 0, trailCPU, 0, Math.min(numP * TPTS * 8, trailCPU.length));
+    }).catch(() => { readPending = false; });
+  }
+
+  // ── Stats readback ──────────────────────────────────────────────────────
+  const statsRBuf = device.createBuffer({ size: MAX_P*FS*4, usage: GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST });
+  let statsRPending=false, statsRSnap=0;
+  function scheduleStatsReadback(enc) {
+    if (statsRPending || numP===0) return;
+    statsRPending=true; statsRSnap=numP;
+    enc.copyBufferToBuffer(pBuf, 0, statsRBuf, 0, statsRSnap*FS*4);
+  }
+  function processStatsReadback() {
+    if (!statsRPending || statsRBuf.mapState==='pending') return;
+    statsRBuf.mapAsync(GPUMapMode.READ, 0, statsRSnap*FS*4).then(() => {
+      computeAndDrawStats(new Float32Array(statsRBuf.getMappedRange(0, statsRSnap*FS*4)), statsRSnap);
+      statsRBuf.unmap(); statsRPending=false;
+    }).catch(()=>{ statsRPending=false; });
+  }
+
+  // ── Frame loop ────────────────────────────────────────────────────────────
+  let lt=performance.now(), fc=0, ft=0;
+
+  function frame() {
+    requestAnimationFrame(frame);
+    perfStartFrame();
+    let simMs = 0;
+    const nowMs = performance.now();
+    const now   = nowMs / 1000;
+    const dt    = Math.min((nowMs - lt) / 1000, 0.05);
+    lt = nowMs; fc++; ft += dt;
+    if (ft >= 0.5) {
+      document.getElementById('fps').textContent   = Math.round(fc/ft);
+      document.getElementById('count').textContent = numP;
+      fc=0; ft=0;
+    }
+    perfDraw(numP, spatialHash);
+
+    if (numP === 0) { perfEndFrame(0); renderer(now); return; } // nothing to simulate yet
+
+    writeUniforms(dt);
+    writeCamera();
+    if (trailEnabled) device.queue.writeBuffer(trailUBuf, 0, new Float32Array([now, trailDuration, 0, 0]));
+
+    const enc = device.createCommandEncoder();
+
+    // Compute passes — two separate passes to isolate bind group layouts
+    const simT0 = performance.now();
+    if (spatialHash) shBuild();
+    simMs = performance.now() - simT0;
+
+    const cp1 = enc.beginComputePass();
+    cp1.setPipeline(integratePL); cp1.setBindGroup(0, computeBG);
+    cp1.dispatchWorkgroups(Math.ceil(numP/64)); cp1.end();
+
+    const cp2 = enc.beginComputePass();
+    if (spatialHash && shPL && shBG) {
+      cp2.setPipeline(shPL); cp2.setBindGroup(0, shBG);
+    } else {
+      cp2.setPipeline(collidePL); cp2.setBindGroup(0, computeBG);
+    }
+    cp2.dispatchWorkgroups(Math.ceil(numP/64)); cp2.end();
+
+    if (numBoxes>0 && boxPL && boxBG) {
+      const cp3=enc.beginComputePass();
+      cp3.setPipeline(boxPL); cp3.setBindGroup(0,boxBG);
+      cp3.dispatchWorkgroups(Math.ceil(numP/64)); cp3.end();
+    }
+
+    if (trailEnabled) scheduleReadback(enc);
+    statsTimer+=dt; if(statsTimer>=1.0){scheduleStatsReadback(enc);statsTimer=0;}
+    if (spatialHash)  shScheduleReadback(enc);
+
+    // Render pass
+    const tv = ctx.getCurrentTexture().createView();
+    const rp = enc.beginRenderPass({
+      colorAttachments: [{ view: tv, loadOp:'clear', clearValue:{r:.039,g:.039,b:.059,a:1}, storeOp:'store' }],
+      depthStencilAttachment: { view: depthTex.createView(), depthLoadOp:'clear', depthClearValue:1, depthStoreOp:'store' },
+    });
+
+    if (!trailOnly) {
+      rp.setPipeline(renderPL);
+      rp.setBindGroup(0, renderBG);
+      rp.setVertexBuffer(0, posVBuf);
+      rp.setVertexBuffer(1, nrmVBuf);
+      rp.setIndexBuffer(idxBuf, 'uint16');
+      rp.drawIndexed(sph.idx.length, numP, 0, 0, 0);
+    }
+
+    if (trailEnabled && numP > 0) {
+      rp.setPipeline(trailPL);
+      rp.setBindGroup(0, trailBG);
+      for (let i=0; i<numP; i++) {
+        const cnt = trailCnt[i]; if (cnt < 2) continue;
+        const oldest = (trailHead[i] - cnt + TPTS) % TPTS;
+        const end2   = oldest + cnt;
+        if (end2 <= TPTS) {
+          rp.draw(cnt, 1, i*TPTS + oldest, 0);
+        } else {
+          rp.draw(TPTS-oldest, 1, i*TPTS+oldest, 0);
+          if (end2-TPTS > 1) rp.draw(end2-TPTS, 1, i*TPTS, 0);
+        }
+      }
+    }
+
+    // Wireframe box
+    rp.setPipeline(wirePL);
+    rp.setBindGroup(0, wireBG);
+    rp.draw(24, 1, 0, 0);
+
+    rp.end();
+    device.queue.submit([enc.finish()]);
+
+    // Draw boxes in a separate encoder (avoids any buffer-write timing issues)
+    if (numBoxes>0) { // boxes always visible even when spheres hidden
+      const encB=device.createCommandEncoder();
+      const tvB=ctx.getCurrentTexture().createView();
+      const rpB=encB.beginRenderPass({
+        colorAttachments:[{view:tvB, loadOp:'load', storeOp:'store'}],
+        depthStencilAttachment:{view:depthTex.createView(), depthLoadOp:'load', depthStoreOp:'store'},
+      });
+      rpB.setPipeline(renderPL);
+      rpB.setBindGroup(0, renderBG);
+      rpB.setVertexBuffer(0, cubPosBuf);
+      rpB.setVertexBuffer(1, cubNrmBuf);
+      rpB.setIndexBuffer(cubIdxBuf, 'uint16');
+      // Draw each box particle individually using firstInstance
+      for (let i=0;i<numP;i++) {
+        if (cpuP[i*FS+11]<0.5) continue; // skip spheres
+        // Scale cube by half-extents via the radius slot trick won't work
+        // Instead draw with instance index = i, shader reads hx/hy/hz from b+8,9,10
+        rpB.drawIndexed(cub.idx.length, 1, 0, 0, i);
+      }
+      rpB.end();
+      device.queue.submit([encB.finish()]);
+    }
+
+    perfEndFrame(simMs);
+    if (trailEnabled) processReadback(now);
+    if (spatialHash)  shProcessReadback();
+    processStatsReadback();
+  }
+
+  function renderer(now) {
+    // Blank frame when numP=0
+    writeCamera();
+    const enc = device.createCommandEncoder();
+    const tv  = ctx.getCurrentTexture().createView();
+    const rp  = enc.beginRenderPass({
+      colorAttachments: [{ view:tv, loadOp:'clear', clearValue:{r:.039,g:.039,b:.059,a:1}, storeOp:'store' }],
+      depthStencilAttachment: { view:depthTex.createView(), depthLoadOp:'clear', depthClearValue:1, depthStoreOp:'store' },
+    });
+    rp.setPipeline(wirePL);
+    rp.setBindGroup(0, wireBG);
+    rp.draw(24, 1, 0, 0);
+    rp.end();
+    device.queue.submit([enc.finish()]);
+  }
+
+  resetSim();
+  frame();
+
+  // ── UI ────────────────────────────────────────────────────────────────────
+  document.getElementById('addBoxBtn').onclick = () => spawnBox(2.0, 1.0, 1.5);
+  document.getElementById('addBtn').onclick    = () => spawn(Math.max(1, parseInt(document.getElementById('addCount').value)||1));
+  document.getElementById('resetBtn').onclick  = resetSim;
+  document.getElementById('explodeBtn').onclick = () => {
+    device.queue.submit([]);
+    const enc2 = device.createCommandEncoder();
+    enc2.copyBufferToBuffer(pBuf, 0, rBuf, 0, numP*FS*4);
+    device.queue.submit([enc2.finish()]);
+    rBuf.mapAsync(GPUMapMode.READ, 0, numP*FS*4).then(() => {
+      const d = new Float32Array(rBuf.getMappedRange(0, numP*FS*4));
+      cpuP.set(d.subarray(0, numP*FS));
+      rBuf.unmap();
+      for (let i=0; i<numP; i++) {
+        const b  = i*FS;
+        const px=cpuP[b], py=cpuP[b+1], pz=cpuP[b+2];
+        const l  = Math.sqrt(px*px+py*py+pz*pz)||1;
+        const f  = 14 + Math.random()*8;
+        cpuP[b+4] += px/l*f; cpuP[b+5] += py/l*f + 6; cpuP[b+6] += pz/l*f;
+      }
+      device.queue.writeBuffer(pBuf, 0, cpuP, 0, numP*FS);
+    });
+  };
+
+  document.getElementById('spatialToggle').onclick = () => {
+    spatialHash = !spatialHash;
+    document.getElementById('spatialToggle').classList.toggle('on', spatialHash);
+    document.getElementById('spatialInfo').style.display = spatialHash ? 'block' : 'none';
+    document.getElementById('collMode').textContent = spatialHash ? 'O(n) hash' : 'O(n²)';
+  };
+
+  const trailToggle = document.getElementById('trailToggle');
+  trailToggle.onclick = () => {
+    trailEnabled = !trailEnabled;
+    trailToggle.classList.toggle('on', trailEnabled);
+    document.getElementById('trailDurationRow').style.display = trailEnabled ? 'block' : 'none';
+    if (!trailEnabled) {
+      trailOnly = false;
+      document.getElementById('trailOnlyToggle').classList.remove('on');
+      trailCPU.fill(0); trailHead.fill(0); trailCnt.fill(0); trailLast.fill(1e9);
+    }
+  };
+
+  document.getElementById('trailOnlyToggle').onclick = () => {
+    if (!trailEnabled) return; // only works when trails are on
+    trailOnly = !trailOnly;
+    document.getElementById('trailOnlyToggle').classList.toggle('on', trailOnly);
+  };
+  document.getElementById('trailDurSlider').oninput = e => {
+    trailDuration = parseFloat(e.target.value);
+    document.getElementById('trailDurLabel').textContent = trailDuration.toFixed(1);
+  };
+
+  document.getElementById('minRadSlider').oninput = e => {
+    MIN_RAD = parseFloat(e.target.value);
+    if (MIN_RAD > MAX_RAD) { MAX_RAD = MIN_RAD; document.getElementById('maxRadSlider').value = MAX_RAD; document.getElementById('maxRadLabel').textContent = MAX_RAD.toFixed(2); }
+    document.getElementById('minRadLabel').textContent = MIN_RAD.toFixed(2);
+  };
+  document.getElementById('maxRadSlider').oninput = e => {
+    MAX_RAD = parseFloat(e.target.value);
+    if (MAX_RAD < MIN_RAD) { MIN_RAD = MAX_RAD; document.getElementById('minRadSlider').value = MIN_RAD; document.getElementById('minRadLabel').textContent = MIN_RAD.toFixed(2); }
+    document.getElementById('maxRadLabel').textContent = MAX_RAD.toFixed(2);
+  };
+  document.getElementById('massExpSlider').oninput = e => {
+    MASS_EXP = parseFloat(e.target.value);
+    document.getElementById('massExpLabel').textContent = MASS_EXP.toFixed(1);
+  };
+  document.getElementById('gravSlider').oninput = e => { GRAVITY     = parseFloat(e.target.value); document.getElementById('gravLabel').textContent = GRAVITY.toFixed(1);     };
+  document.getElementById('restSlider').oninput = e => { RESTITUTION = parseFloat(e.target.value); document.getElementById('restLabel').textContent = RESTITUTION.toFixed(2); };
+  document.getElementById('fricSlider').oninput = e => { FRICTION    = parseFloat(e.target.value); document.getElementById('fricLabel').textContent = FRICTION.toFixed(3);    };
+
+  window.addEventListener('resize', () => {
+    canvas.width=innerWidth; canvas.height=innerHeight;
+    depthTex.destroy(); depthTex = makeDepth();
+    ctx.configure({ device, format: fmt, alphaMode: 'opaque' });
+  });
+}
+
+main().catch(e => setStatus('Fatal: ' + e.message, false));
+</script>
+</body>
+</html>
