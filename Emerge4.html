@@ -187,11 +187,10 @@
   </div>
   <label style="margin-top:8px">Blob shape · random position</label>
   <div class="seg" id="segShape">
-    <button data-sh="fill" class="active">Fill box</button>
-    <button data-sh="sphere">Sphere</button>
+    <button data-sh="sphere" class="active">Sphere</button>
     <button data-sh="box">Block</button>
   </div>
-  <div id="shSphere" style="display:none">
+  <div id="shSphere">
     <label>Blob radius R <b id="vR">4.0</b></label>
     <input type="range" id="inR" class="flat" min="1" max="10" step="0.5" value="4">
   </div>
@@ -1002,7 +1001,7 @@ async function main() {
     S.cmode = +b.dataset.m;
     document.querySelectorAll('#segCol button').forEach(x => x.classList.toggle('active', x === b));
   });
-  let addSp = 0, addShape = 'fill';
+  let addSp = 0, addShape = 'sphere';
   document.querySelectorAll('#segSp button').forEach(b => b.onclick = () => {
     addSp = +b.dataset.s;
     document.querySelectorAll('#segSp button').forEach(x => x.classList.toggle('active', x === b));
@@ -1046,22 +1045,10 @@ async function main() {
       Object.assign(opt, { x0: cx-hx, x1: cx+hx, y0: cy-hy, y1: cy+hy, z0: cz-hz, z1: cz+hz });
     }
     const placed = spawnLattice(Math.min(n, MAX_P - numP), S.Tt, opt);
-    // overflow becomes ghosts: non-interacting until they drift into clear space
-    let ghosts = 0, remaining = Math.min(n - placed, MAX_P - numP), tries = 0;
-    const gx0 = opt.x0 ?? -S.bw+1, gx1 = opt.x1 ?? S.bw-1;
-    const gy0 = opt.y0 ?? -S.bh+1, gy1 = opt.y1 ?? S.bh-1;
-    const gz0 = opt.z0 ?? -S.bd+1, gz1 = opt.z1 ?? S.bd-1;
-    while (remaining > 0 && tries < n * 50 + 200) {
-      tries++;
-      const x = rnd(gx0, gx1), y = rnd(gy0, gy1), z = rnd(gz0, gz1);
-      if (opt.skip && opt.skip(x, y, z)) continue;
-      writeParticle(numP++, x, y, z, S.Tt, pr, mass, addSp, 1);
-      ghosts++; remaining--;
-    }
-    if (ghosts > 0) upload();
-    setStatus('added ' + placed.toLocaleString() +
-      (ghosts ? ' + ' + ghosts + ' ghosts (activate when clear)' : '') +
-      ' → ' + numP.toLocaleString() + ' total');
+    setStatus(placed < n
+      ? 'placed ' + placed.toLocaleString() + ' of ' + n.toLocaleString() +
+        ' — region full at this particle size → ' + numP.toLocaleString() + ' total'
+      : 'added ' + placed.toLocaleString() + ' → ' + numP.toLocaleString() + ' total');
     } finally { adding = false; }
   };
   document.getElementById('bReset').onclick = () => { clearAll(); setStatus('box cleared'); };
