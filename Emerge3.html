@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emerge 3 — molecular dynamics playground</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:      #080D1A;
+    --panel:   rgba(15, 23, 46, 0.78);
+    --line:    rgba(148, 178, 255, 0.14);
+    --ink:     #E7EDFB;
+    --dim:     #8FA3C8;
+    --faint:   #56688C;
+    --amber:   #F5A524;
+    --hot:     #F87171;
+    --cold:    #5B8DEF;
+    --good:    #34D399;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; overflow:hidden; background:var(--bg);
+    font-family:'Space Grotesk', system-ui, sans-serif; color:var(--ink); }
+  canvas#gpu { position:fixed; inset:0; width:100%; height:100%; display:block; }
+
+  .panel {
+    position:fixed; background:var(--panel); backdrop-filter:blur(14px);
+    border:1px solid var(--line); border-radius:14px; padding:16px 18px; z-index:10;
+  }
+  #ctl   { top:16px; left:16px; width:252px; max-height:calc(100% - 32px); overflow-y:auto; }
+  #meas  { top:16px; right:16px; width:288px; }
+
+  .panel::-webkit-scrollbar { width:4px; }
+  .panel::-webkit-scrollbar-thumb { background:var(--faint); border-radius:2px; }
+
+  h1 { font-size:14px; font-weight:600; letter-spacing:0.02em; margin-bottom:2px; }
+  .sub { font-size:10.5px; color:var(--dim); margin-bottom:14px; line-height:1.45; }
+
+  .sect { font-size:10px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--faint); margin:16px 0 8px; }
+  .sect:first-of-type { margin-top:4px; }
+
+  label { display:flex; justify-content:space-between; font-size:11.5px; color:var(--dim);
+    margin:10px 0 4px; }
+  label b { color:var(--ink); font-family:'IBM Plex Mono', monospace; font-weight:500;
+    font-size:11px; }
+
+  input[type=range] { width:100%; height:3px; -webkit-appearance:none; appearance:none;
+    background:linear-gradient(90deg, var(--cold), var(--amber), var(--hot));
+    border-radius:2px; outline:none; }
+  input[type=range].flat { background:rgba(148,178,255,0.22); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:13px; height:13px;
+    border-radius:50%; background:var(--ink); border:2px solid var(--bg);
+    box-shadow:0 0 0 1.5px var(--amber); cursor:pointer; }
+
+  input[type=number] { width:100%; background:rgba(8,13,26,0.7); border:1px solid var(--line);
+    border-radius:8px; color:var(--ink); font-family:'IBM Plex Mono', monospace; font-size:12px;
+    padding:7px 10px; outline:none; }
+  input[type=number]:focus { border-color:var(--amber); }
+
+  .btn { display:block; width:100%; border:none; border-radius:9px; padding:9px 12px;
+    font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; margin-top:8px;
+    transition:transform .06s ease, filter .15s ease; }
+  .btn:hover { filter:brightness(1.12); }
+  .btn:active { transform:scale(0.985); }
+  .btn-add   { background:linear-gradient(135deg, #B45309, var(--amber)); color:#140B00; }
+  .btn-ghost { background:rgba(148,178,255,0.10); color:var(--ink);
+    border:1px solid var(--line); font-weight:500; }
+
+  .presets { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .preset { border:1px solid var(--line); background:rgba(148,178,255,0.06); color:var(--dim);
+    border-radius:8px; padding:7px 6px; font-family:inherit; font-size:10.5px; font-weight:500;
+    cursor:pointer; text-align:center; line-height:1.3; transition:all .15s ease; }
+  .preset:hover { color:var(--ink); border-color:rgba(245,165,36,0.5); }
+  .preset.active { background:rgba(245,165,36,0.14); border-color:var(--amber); color:var(--amber); }
+  .preset span { display:block; font-size:8.5px; color:var(--faint); font-weight:400; margin-top:1px; }
+
+  .row { display:flex; align-items:center; justify-content:space-between; margin-top:10px; }
+  .row label { margin:0; }
+  .toggle { width:34px; height:19px; border-radius:10px; background:rgba(148,178,255,0.18);
+    border:none; position:relative; cursor:pointer; transition:background .18s ease; flex:none; }
+  .toggle::after { content:''; position:absolute; top:2.5px; left:3px; width:14px; height:14px;
+    border-radius:50%; background:var(--dim); transition:all .18s ease; }
+  .toggle.on { background:var(--amber); }
+  .toggle.on::after { left:17px; background:#140B00; }
+
+  .seg { display:flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; margin-top:6px; }
+  .seg button { flex:1; border:none; background:transparent; color:var(--dim); font-family:inherit;
+    font-size:10.5px; padding:6px 4px; cursor:pointer; }
+  .seg button.active { background:rgba(245,165,36,0.14); color:var(--amber); }
+
+  /* ── Measurements ── */
+  #meas h2 { font-size:10px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase;
+    color:var(--faint); margin-bottom:10px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px 14px; }
+  .m { border-left:2px solid var(--line); padding-left:9px; }
+  .m .k { font-size:9.5px; letter-spacing:0.06em; text-transform:uppercase; color:var(--faint); }
+  .m .v { font-family:'IBM Plex Mono', monospace; font-size:15px; font-weight:500;
+    font-variant-numeric:tabular-nums; margin-top:1px; }
+  .m .u { font-size:9px; color:var(--faint); margin-left:2px; }
+  .m.temp  { border-color:var(--amber); }  .m.temp .v  { color:var(--amber); }
+  .m.press { border-color:var(--cold); }   .m.press .v { color:var(--cold); }
+
+  #histWrap, #grWrap { margin-top:14px; }
+  #histWrap .hk, #grWrap .hk { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px; }
+  #histWrap .hk .t, #grWrap .hk .t { font-size:10px; letter-spacing:0.14em; text-transform:uppercase; color:var(--faint); }
+  #histWrap .hk .leg, #grWrap .hk .leg { font-size:9px; color:var(--faint); }
+  #histWrap .hk .leg i { color:var(--amber); font-style:normal; }
+  #histWrap .hk .leg b { color:var(--dim); font-weight:400; }
+  #hist, #gr { display:block; width:100%; height:110px; border-radius:8px; background:rgba(8,13,26,0.6); }
+
+  #status { position:fixed; bottom:14px; left:50%; transform:translateX(-50%);
+    font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--faint); z-index:10;
+    background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:5px 14px;
+    max-width:80%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #status.err { color:var(--hot); }
+  #dbg { position:fixed; bottom:14px; left:16px; z-index:10; display:none;
+    font-family:'IBM Plex Mono', monospace; font-size:10.5px; line-height:1.75;
+    color:var(--dim); background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:10px 14px; min-width:190px; }
+  #dbg b { color:var(--ink); font-weight:500; float:right; margin-left:14px; }
+  #dbg b.bad { color:var(--hot); }
+  #rep { position:fixed; inset:0; background:rgba(4,7,15,0.72); z-index:50;
+    display:none; align-items:center; justify-content:center; }
+  #rep .card { width:min(560px, 92vw); background:var(--panel);
+    backdrop-filter:blur(14px); border:1px solid var(--line); border-radius:14px;
+    padding:16px 18px; }
+  #rep h3 { font-size:13px; font-weight:600; margin-bottom:4px; }
+  #repTxt { width:100%; height:190px; margin:10px 0 4px;
+    background:rgba(8,13,26,0.75); color:var(--dim); border:1px solid var(--line);
+    border-radius:8px; font-family:'IBM Plex Mono', monospace; font-size:9.5px;
+    padding:8px; resize:none; }
+  #rep .btns { display:flex; gap:8px; }
+  #rep .btns .btn { flex:1; }
+  #hint { position:fixed; bottom:44px; left:50%; transform:translateX(-50%); font-size:10px;
+    color:var(--faint); z-index:9; }
+</style>
+</head>
+<body>
+<canvas id="gpu"></canvas>
+
+<div class="panel" id="ctl">
+  <h1>Emerge</h1>
+  <div class="sub">One pair-force law. Everything else — gas, liquid, crystal, pressure, temperature — emerges.</div>
+
+  <div class="sect">Experiments</div>
+  <div class="presets">
+    <button class="preset" data-p="gas">Hot gas<span>weak attraction</span></button>
+    <button class="preset" data-p="condense">Condensation<span>cool a vapour</span></button>
+    <button class="preset" data-p="crystal">Crystal<span>freeze it solid</span></button>
+    <button class="preset" data-p="brownian">Brownian<span>heavy tracer</span></button>
+    <button class="preset" data-p="diffuse">Diffusion<span>two species mix</span></button>
+    <button class="preset" data-p="demix">Demixing<span>oil &amp; water</span></button>
+    <button class="preset" data-p="empty">Empty box<span>build your own</span></button>
+  </div>
+
+  <div class="sect">Thermodynamics</div>
+  <label>Target temperature <b id="vT">1.00</b></label>
+  <input type="range" id="sT" min="0.02" max="3" step="0.02" value="1">
+  <div class="row">
+    <label>Thermostat coupling</label>
+    <button class="toggle on" id="tgTherm"></button>
+  </div>
+
+  <div class="sect">Interaction</div>
+  <label>ε A–A (blue) <b id="vEAA">1.00</b></label>
+  <input type="range" id="sEAA" class="flat" min="0" max="3" step="0.05" value="1">
+  <label>ε A–B (cross) <b id="vEAB">1.00</b></label>
+  <input type="range" id="sEAB" class="flat" min="0" max="3" step="0.05" value="1">
+  <label>ε B–B (orange) <b id="vEBB">1.00</b></label>
+  <input type="range" id="sEBB" class="flat" min="0" max="3" step="0.05" value="1">
+  <label>Gravity <b id="vG">0.0</b></label>
+  <input type="range" id="sG" class="flat" min="0" max="6" step="0.1" value="0">
+
+  <div class="sect">Container</div>
+  <label>Box half-width <b id="vB">14</b></label>
+  <input type="range" id="sB" class="flat" min="8" max="24" step="0.5" value="14">
+
+  <div class="sect">Particles</div>
+  <label>Count to add</label>
+  <input type="number" id="nAdd" value="500" min="10" step="500">
+  <button class="btn btn-add" id="bAdd">Add particles</button>
+  <button class="btn btn-ghost" id="bReset">Clear box</button>
+
+  <div class="sect">Display</div>
+  <div class="seg" id="segCol">
+    <button data-m="0" class="active">Colour by speed</button>
+    <button data-m="1">By species</button>
+  </div>
+
+  <div class="sect">Diagnostics</div>
+  <div class="row">
+    <label>Debug HUD</label>
+    <button class="toggle" id="tgDbg"></button>
+  </div>
+  <button class="btn btn-ghost" id="bCap">Capture 10 s report</button>
+</div>
+
+<div class="panel" id="meas">
+  <h2>Measured — not programmed</h2>
+  <div class="grid2">
+    <div class="m temp"><div class="k">Temperature</div><div class="v"><span id="mT">–</span></div></div>
+    <div class="m press"><div class="k">Pressure</div><div class="v"><span id="mP">–</span></div></div>
+    <div class="m"><div class="k">Particles</div><div class="v"><span id="mN">0</span></div></div>
+    <div class="m"><div class="k">Density</div><div class="v"><span id="mD">–</span></div></div>
+    <div class="m"><div class="k">Kinetic energy</div><div class="v"><span id="mK">–</span></div></div>
+    <div class="m"><div class="k">Potential energy</div><div class="v"><span id="mPE">–</span></div></div>
+    <div class="m"><div class="k">Total energy</div><div class="v"><span id="mE">–</span></div></div>
+    <div class="m"><div class="k">Frame / sim</div><div class="v"><span id="mF">–</span><span class="u">ms</span></div></div>
+  </div>
+  <div id="histWrap">
+    <div class="hk">
+      <div class="t">Speed distribution</div>
+      <div class="leg"><b>■ measured</b> &nbsp;<i>— Maxwell-Boltzmann</i></div>
+    </div>
+    <canvas id="hist" width="252" height="110"></canvas>
+  </div>
+  <div id="grWrap">
+    <div class="hk">
+      <div class="t">Radial distribution g(r)</div>
+      <div class="leg"><b>gas flat · liquid ripples · crystal spikes</b></div>
+    </div>
+    <canvas id="gr" width="252" height="110"></canvas>
+  </div>
+</div>
+
+<div id="dbg"></div>
+<div id="rep"><div class="card">
+  <h3>Diagnostic report</h3>
+  <div class="sub" id="repSub">Attach this JSON to the chat — copy it, or download it to your Downloads folder.</div>
+  <textarea id="repTxt" readonly spellcheck="false"></textarea>
+  <div class="btns">
+    <button class="btn btn-add" id="bRepCopy">Copy JSON</button>
+    <button class="btn btn-ghost" id="bRepDl">Download</button>
+    <button class="btn btn-ghost" id="bRepClose">Close</button>
+  </div>
+</div></div>
+<div id="hint">drag orbit · wheel zoom · right-drag pan — try shrinking the box on a hot gas</div>
+<div id="status">initialising WebGPU…</div>
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════════════════════════
+//  Emerge 3 — GPU molecular dynamics
+//  Particle layout (flat f32, stride FS=16):
+//    0- 2  position xyz          3  radius (= sigma/2)
+//    4- 6  velocity xyz          7  mass
+//    8-10  force accumulator    11  species (0,1,2…)
+//   12-14  reserved             15  pad
+// ═══════════════════════════════════════════════════════════════════════════
+const FS       = 16;
+const MAX_P    = 65536;
+const CELL     = 3.0;          // grid cell edge = max interaction cutoff
+const GMAX     = 16;           // grid cells per axis at largest box (24*2/3)
+const CAP      = 64;           // particle capacity per cell
+const SUB      = 3;            // physics sub-steps per frame
+const DT       = 0.004;        // reduced time units per sub-step
+const TAU      = 0.5;          // thermostat coupling time
+
+// ─── Simulation state ───────────────────────────────────────────────────────
+const S = {
+  bw:14, bh:14, bd:14,          // box half-extents
+  Tt:1.0,                        // target temperature
+  epsAA:1.0, epsAB:1.0, epsBB:1.0, grav:0.0,
+  therm:true, cmode:0,
+  Tm:1.0,                        // last measured temperature
+  vmax:3.5,                      // colour-map speed scale
+  dbg:false,
+  preset:'condense',             // active experiment, recorded in reports
+};
+let numP = 0;
+const cpuP = new Float32Array(MAX_P * FS);
+
+// ─── WGSL: shared header for simulation kernels ─────────────────────────────
+const W_HEAD = `
+struct U {
+  dt : f32,  eps : f32,  grav : f32,  lam : f32,
+  bw : f32,  bh : f32,   bd : f32,    count : u32,
+  gx : u32,  gy : u32,   gz : u32,    cap : u32,
+  cell : f32, vmax : f32, cmode : u32, pad : u32,
+  epsAA : f32, epsAB : f32, epsBB : f32, pad2 : f32,
+};
+@group(0) @binding(0) var<storage, read_write> P : array<f32>;
+@group(0) @binding(1) var<uniform> u : U;
+@group(0) @binding(2) var<storage, read_write> cellCnt : array<atomic<u32>>;
+@group(0) @binding(3) var<storage, read_write> cellItm : array<u32>;
+@group(0) @binding(4) var<storage, read_write> wallImp : array<atomic<u32>>;
+
+fn cellCoord(p : vec3<f32>) -> vec3<i32> {
+  let cx = i32(clamp(floor((p.x + u.bw) / u.cell), 0.0, f32(u.gx - 1u)));
+  let cy = i32(clamp(floor((p.y + u.bh) / u.cell), 0.0, f32(u.gy - 1u)));
+  let cz = i32(clamp(floor((p.z + u.bd) / u.cell), 0.0, f32(u.gz - 1u)));
+  return vec3<i32>(cx, cy, cz);
+}
+fn cellIndex(c : vec3<i32>) -> u32 {
+  return (u32(c.z) * u.gy + u32(c.y)) * u.gx + u32(c.x);
+}
+`;
+
+// ─── WGSL: zero the cell counters ───────────────────────────────────────────
+const W_CLEAR = W_HEAD + `
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) g : vec3<u32>) {
+  let n = u.gx * u.gy * u.gz;
+  if (g.x < n) { atomicStore(&cellCnt[g.x], 0u); }
+}
+`;
+
+// ─── WGSL: bin particles into grid cells ────────────────────────────────────
+const W_BUILD = W_HEAD + `
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) g : vec3<u32>) {
+  let i = g.x;
+  if (i >= u.count) { return; }
+  let b = i * 16u;
+  let p = vec3<f32>(P[b], P[b+1u], P[b+2u]);
+  let c = cellIndex(cellCoord(p));
+  let slot = atomicAdd(&cellCnt[c], 1u);
+  if (slot < u.cap) { cellItm[c * u.cap + slot] = i; }
+}
+`;
+
+// ─── WGSL: Lennard-Jones pair forces via neighbouring cells ────────────────
+const W_FORCE = W_HEAD + `
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) g : vec3<u32>) {
+  let i = g.x;
+  if (i >= u.count) { return; }
+  let b  = i * 16u;
+  let pi = vec3<f32>(P[b], P[b+1u], P[b+2u]);
+  let ri = P[b+3u];
+  var f  = vec3<f32>(0.0, 0.0, 0.0);
+  var pe = 0.0;
+  let si = min(u32(P[b+11u] + 0.5), 1u);   // tracer (2) folds into species 1
+
+  let cc = cellCoord(pi);
+  for (var oz = -1; oz <= 1; oz++) {
+    let z = cc.z + oz;
+    if (z < 0 || z >= i32(u.gz)) { continue; }
+    for (var oy = -1; oy <= 1; oy++) {
+      let y = cc.y + oy;
+      if (y < 0 || y >= i32(u.gy)) { continue; }
+      for (var ox = -1; ox <= 1; ox++) {
+        let x = cc.x + ox;
+        if (x < 0 || x >= i32(u.gx)) { continue; }
+        let c   = cellIndex(vec3<i32>(x, y, z));
+        let cnt = min(atomicLoad(&cellCnt[c]), u.cap);
+        for (var k = 0u; k < cnt; k++) {
+          let j = cellItm[c * u.cap + k];
+          if (j == i) { continue; }
+          let bj = j * 16u;
+          let pj = vec3<f32>(P[bj], P[bj+1u], P[bj+2u]);
+          let rj = P[bj+3u];
+          let sj = min(u32(P[bj+11u] + 0.5), 1u);
+          var epsP = u.epsAA;
+          if (si != sj) { epsP = u.epsAB; }
+          else if (si == 1u) { epsP = u.epsBB; }
+          let d  = pi - pj;
+          var r2 = dot(d, d);
+          let sig = ri + rj;                       // pair diameter
+          let rc  = min(2.5 * sig, u.cell);        // cutoff, capped at cell
+          if (r2 >= rc * rc) { continue; }
+          r2 = max(r2, 0.36 * sig * sig);          // core clamp: no blow-ups
+          let sr2  = (sig * sig) / r2;
+          let sr6  = sr2 * sr2 * sr2;
+          let sr12 = sr6 * sr6;
+          // F = 24 eps (2 sr12 - sr6) / r2 * d   — repulsion always on,
+          // attraction scaled by eps (eps→0 leaves a soft-sphere gas)
+          let rep = 24.0 * (2.0 * sr12) / r2;
+          let att = 24.0 * epsP * sr6 / r2;
+          f += (rep - att) * d;
+          // shifted LJ pair potential, half-share per particle
+          let sr2c = (sig * sig) / (rc * rc);
+          let sr6c = sr2c * sr2c * sr2c;
+          pe += 0.5 * (4.0 * (sr12 - epsP * sr6)
+                     - 4.0 * (sr6c * sr6c - epsP * sr6c));
+        }
+      }
+    }
+  }
+  P[b+8u] = f.x;  P[b+9u] = f.y;  P[b+10u] = f.z;
+  P[b+12u] = pe;
+}
+`;
+
+// ─── WGSL: integrate + walls + thermostat + wall-impulse tally ─────────────
+const W_INTEG = W_HEAD + `
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) g : vec3<u32>) {
+  let i = g.x;
+  if (i >= u.count) { return; }
+  let b = i * 16u;
+  var p = vec3<f32>(P[b],    P[b+1u],  P[b+2u]);
+  var v = vec3<f32>(P[b+4u], P[b+5u],  P[b+6u]);
+  let f = vec3<f32>(P[b+8u], P[b+9u],  P[b+10u]);
+  let m = P[b+7u];
+  let r = P[b+3u];
+
+  v += (f / m) * u.dt;
+  v.y -= u.grav * u.dt;
+  v *= u.lam;                                  // Berendsen thermostat scale
+  p += v * u.dt;
+
+  var imp = 0.0;
+  let wx = u.bw - r;  let wy = u.bh - r;  let wz = u.bd - r;
+  if (p.x >  wx) { p.x =  wx; imp += 2.0*m*abs(v.x); v.x = -v.x; }
+  if (p.x < -wx) { p.x = -wx; imp += 2.0*m*abs(v.x); v.x = -v.x; }
+  if (p.y >  wy) { p.y =  wy; imp += 2.0*m*abs(v.y); v.y = -v.y; }
+  if (p.y < -wy) { p.y = -wy; imp += 2.0*m*abs(v.y); v.y = -v.y; }
+  if (p.z >  wz) { p.z =  wz; imp += 2.0*m*abs(v.z); v.z = -v.z; }
+  if (p.z < -wz) { p.z = -wz; imp += 2.0*m*abs(v.z); v.z = -v.z; }
+  if (imp > 0.0) { atomicAdd(&wallImp[0], u32(imp * 256.0)); }
+
+  P[b]    = p.x;  P[b+1u] = p.y;  P[b+2u] = p.z;
+  P[b+4u] = v.x;  P[b+5u] = v.y;  P[b+6u] = v.z;
+}
+`;
+
+// ─── WGSL: instanced sphere rendering, two colour modes ────────────────────
+const W_RENDER = `
+struct U {
+  dt : f32,  eps : f32,  grav : f32,  lam : f32,
+  bw : f32,  bh : f32,   bd : f32,    count : u32,
+  gx : u32,  gy : u32,   gz : u32,    cap : u32,
+  cell : f32, vmax : f32, cmode : u32, pad : u32,
+};
+struct Cam { vp : mat4x4<f32>, eye : vec4<f32> };
+@group(0) @binding(0) var<storage, read> P : array<f32>;
+@group(0) @binding(1) var<uniform> cam : Cam;
+@group(0) @binding(2) var<uniform> u : U;
+
+struct VIn  { @location(0) lp : vec3<f32>, @location(1) ln : vec3<f32>,
+              @builtin(instance_index) inst : u32 };
+struct VOut { @builtin(position) clip : vec4<f32>,
+              @location(0) n : vec3<f32>, @location(1) col : vec3<f32>,
+              @location(2) wp : vec3<f32> };
+
+fn speedColour(t : f32) -> vec3<f32> {
+  let c1 = vec3<f32>(0.13, 0.33, 0.95);
+  let c2 = vec3<f32>(0.99, 0.78, 0.22);
+  let c3 = vec3<f32>(0.98, 0.24, 0.20);
+  if (t < 0.5) { return mix(c1, c2, t * 2.0); }
+  return mix(c2, c3, (t - 0.5) * 2.0);
+}
+fn speciesColour(s : f32) -> vec3<f32> {
+  if (s < 0.5) { return vec3<f32>(0.26, 0.72, 0.96); }
+  if (s < 1.5) { return vec3<f32>(0.98, 0.55, 0.22); }
+  return vec3<f32>(1.00, 0.84, 0.30);
+}
+
+@vertex
+fn vs(in : VIn) -> VOut {
+  var out : VOut;
+  let b   = in.inst * 16u;
+  let pos = vec3<f32>(P[b], P[b+1u], P[b+2u]);
+  let rad = P[b+3u];
+  let v   = vec3<f32>(P[b+4u], P[b+5u], P[b+6u]);
+  let wp  = pos + in.lp * rad;
+  out.clip = cam.vp * vec4<f32>(wp, 1.0);
+  out.n    = in.ln;
+  out.wp   = wp;
+  if (u.cmode == 1u) {
+    out.col = speciesColour(P[b+11u]);
+  } else {
+    out.col = speedColour(clamp(length(v) / u.vmax, 0.0, 1.0));
+  }
+  return out;
+}
+
+@fragment
+fn fs(in : VOut) -> @location(0) vec4<f32> {
+  let n  = normalize(in.n);
+  let ld = normalize(vec3<f32>(0.45, 0.85, 0.30));
+  let vd = normalize(cam.eye.xyz - in.wp);
+  let dif = max(dot(n, ld), 0.0);
+  let rim = pow(1.0 - max(dot(n, vd), 0.0), 2.5) * 0.35;
+  let c = in.col * (0.30 + 0.75 * dif) + vec3<f32>(rim);
+  return vec4<f32>(c, 1.0);
+}
+`;
+
+// ─── WGSL: container wireframe ─────────────────────────────────────────────
+const W_WIRE = `
+struct U {
+  dt : f32,  eps : f32,  grav : f32,  lam : f32,
+  bw : f32,  bh : f32,   bd : f32,    count : u32,
+  gx : u32,  gy : u32,   gz : u32,    cap : u32,
+  cell : f32, vmax : f32, cmode : u32, pad : u32,
+};
+struct Cam { vp : mat4x4<f32>, eye : vec4<f32> };
+@group(0) @binding(1) var<uniform> cam : Cam;
+@group(0) @binding(2) var<uniform> u : U;
+
+@vertex
+fn vs(@builtin(vertex_index) vi : u32) -> @builtin(position) vec4<f32> {
+  var E = array<vec3<f32>, 24>(
+    vec3<f32>(-1.,-1.,-1.), vec3<f32>( 1.,-1.,-1.),
+    vec3<f32>( 1.,-1.,-1.), vec3<f32>( 1.,-1., 1.),
+    vec3<f32>( 1.,-1., 1.), vec3<f32>(-1.,-1., 1.),
+    vec3<f32>(-1.,-1., 1.), vec3<f32>(-1.,-1.,-1.),
+    vec3<f32>(-1., 1.,-1.), vec3<f32>( 1., 1.,-1.),
+    vec3<f32>( 1., 1.,-1.), vec3<f32>( 1., 1., 1.),
+    vec3<f32>( 1., 1., 1.), vec3<f32>(-1., 1., 1.),
+    vec3<f32>(-1., 1., 1.), vec3<f32>(-1., 1.,-1.),
+    vec3<f32>(-1.,-1.,-1.), vec3<f32>(-1., 1.,-1.),
+    vec3<f32>( 1.,-1.,-1.), vec3<f32>( 1., 1.,-1.),
+    vec3<f32>( 1.,-1., 1.), vec3<f32>( 1., 1., 1.),
+    vec3<f32>(-1.,-1., 1.), vec3<f32>(-1., 1., 1.));
+  let p = E[vi] * vec3<f32>(u.bw, u.bh, u.bd);
+  return cam.vp * vec4<f32>(p, 1.0);
+}
+@fragment
+fn fs() -> @location(0) vec4<f32> { return vec4<f32>(0.45, 0.56, 0.85, 0.35); }
+`;
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Boot
+// ═══════════════════════════════════════════════════════════════════════════
+const statusEl = document.getElementById('status');
+function setStatus(msg, ok) {
+  statusEl.textContent = msg;
+  statusEl.classList.toggle('err', ok === false);
+}
+
+const canvas = document.getElementById('gpu');
+
+// small matrix helpers
+function mPersp(fov, asp, n, f) {
+  const t = 1 / Math.tan(fov / 2), r = 1 / (n - f);
+  return new Float32Array([t/asp,0,0,0, 0,t,0,0, 0,0,(n+f)*r,-1, 0,0,2*n*f*r,0]);
+}
+function mLook(e, c, up) {
+  const z = norm3(sub3(e, c)), x = norm3(cross3(up, z)), y = cross3(z, x);
+  return new Float32Array([
+    x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0,
+    -dot3(x,e), -dot3(y,e), -dot3(z,e), 1]);
+}
+function mMul(a, b) {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    let s = 0;
+    for (let k = 0; k < 4; k++) s += a[k*4+r] * b[c*4+k];
+    o[c*4+r] = s;
+  }
+  return o;
+}
+const sub3   = (a,b) => [a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+const dot3   = (a,b) => a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+const cross3 = (a,b) => [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+const norm3  = a => { const l = Math.hypot(a[0],a[1],a[2]) || 1; return [a[0]/l, a[1]/l, a[2]/l]; };
+
+function download(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function gaussian() {
+  let u1 = 0; while (u1 === 0) u1 = Math.random();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * Math.random());
+}
+
+// low-poly UV sphere
+function buildSphere(seg = 10, ring = 7) {
+  const pos = [], idx = [];
+  for (let r = 0; r <= ring; r++) {
+    const ph = (r / ring) * Math.PI;
+    for (let s = 0; s <= seg; s++) {
+      const th = (s / seg) * 2 * Math.PI;
+      pos.push(Math.sin(ph)*Math.cos(th), Math.cos(ph), Math.sin(ph)*Math.sin(th));
+    }
+  }
+  for (let r = 0; r < ring; r++) for (let s = 0; s < seg; s++) {
+    const a = r*(seg+1)+s, b = a+seg+1;
+    idx.push(a, b, a+1, a+1, b, b+1);
+  }
+  return { pos: new Float32Array(pos), idx: new Uint16Array(idx) };
+}
+
+async function main() {
+  if (!navigator.gpu) { setStatus('WebGPU unavailable — use Chrome/Edge 113+', false); return; }
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) { setStatus('No WebGPU adapter found', false); return; }
+  const device = await adapter.requestDevice();
+  device.addEventListener('uncapturederror', e => setStatus('GPU error: ' + e.error.message, false));
+
+  const ctx = canvas.getContext('webgpu');
+  const fmt = navigator.gpu.getPreferredCanvasFormat();
+  ctx.configure({ device, format: fmt, alphaMode: 'opaque' });
+
+  async function shader(code, label) {
+    const mod = device.createShaderModule({ code, label });
+    const info = await mod.getCompilationInfo();
+    const errs = info.messages.filter(m => m.type === 'error');
+    if (errs.length) {
+      const t = errs.map(m => label + ' L' + m.lineNum + ':' + m.linePos + ' ' + m.message).join(' | ');
+      setStatus(t, false);
+      throw new Error(t);
+    }
+    return mod;
+  }
+
+  // ── Buffers ────────────────────────────────────────────────────────────
+  const pBuf = device.createBuffer({ size: MAX_P * FS * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
+  const uBuf = device.createBuffer({ size: 80,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const camBuf = device.createBuffer({ size: 80,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const cellCntBuf = device.createBuffer({ size: GMAX*GMAX*GMAX * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
+  const cellItmBuf = device.createBuffer({ size: GMAX*GMAX*GMAX * CAP * 4,
+    usage: GPUBufferUsage.STORAGE });
+  const wallBuf = device.createBuffer({ size: 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC });
+  const statsRBuf = device.createBuffer({ size: MAX_P * FS * 4,
+    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+  const wallRBuf = device.createBuffer({ size: 4,
+    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+  const gridRBuf = device.createBuffer({ size: GMAX*GMAX*GMAX * 4,
+    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+
+  // ── Sim pipelines (one shared bind group layout) ───────────────────────
+  const simBGL = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+    { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+    { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+  ]});
+  const simBG = device.createBindGroup({ layout: simBGL, entries: [
+    { binding: 0, resource: { buffer: pBuf } },
+    { binding: 1, resource: { buffer: uBuf } },
+    { binding: 2, resource: { buffer: cellCntBuf } },
+    { binding: 3, resource: { buffer: cellItmBuf } },
+    { binding: 4, resource: { buffer: wallBuf } },
+  ]});
+  const simLayout = device.createPipelineLayout({ bindGroupLayouts: [simBGL] });
+
+  async function computePL(code, label) {
+    const mod = await shader(code, label);
+    return device.createComputePipelineAsync({ layout: simLayout,
+      compute: { module: mod, entryPoint: 'main' } });
+  }
+  const clearPL = await computePL(W_CLEAR, 'clear');
+  const buildPL = await computePL(W_BUILD, 'build');
+  const forcePL = await computePL(W_FORCE, 'force');
+  const integPL = await computePL(W_INTEG, 'integrate');
+
+  // ── Render pipelines ───────────────────────────────────────────────────
+  const renBGL = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+    { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+    { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+  ]});
+  const renBG = device.createBindGroup({ layout: renBGL, entries: [
+    { binding: 0, resource: { buffer: pBuf } },
+    { binding: 1, resource: { buffer: camBuf } },
+    { binding: 2, resource: { buffer: uBuf } },
+  ]});
+  const renMod = await shader(W_RENDER, 'render');
+  const sph = buildSphere();
+  const posVBuf = device.createBuffer({ size: sph.pos.byteLength,
+    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+  const idxVBuf = device.createBuffer({ size: Math.ceil(sph.idx.byteLength/4)*4,
+    usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(posVBuf, 0, sph.pos);
+  device.queue.writeBuffer(idxVBuf, 0, sph.idx);
+
+  let renderPL, wirePL;
+  try {
+    renderPL = await device.createRenderPipelineAsync({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [renBGL] }),
+      vertex: { module: renMod, entryPoint: 'vs', buffers: [
+        { arrayStride: 12, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x3' },] },
+        { arrayStride: 12, attributes: [{ shaderLocation: 1, offset: 0, format: 'float32x3' },] },
+      ]},
+      fragment: { module: renMod, entryPoint: 'fs', targets: [{ format: fmt }] },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
+    });
+    const wireMod = await shader(W_WIRE, 'wire');
+    wirePL = await device.createRenderPipelineAsync({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [renBGL] }),
+      vertex:   { module: wireMod, entryPoint: 'vs' },
+      fragment: { module: wireMod, entryPoint: 'fs', targets: [{ format: fmt,
+        blend: { color: { srcFactor:'src-alpha', dstFactor:'one-minus-src-alpha' },
+                 alpha: { srcFactor:'one', dstFactor:'one-minus-src-alpha' } } }] },
+      primitive: { topology: 'line-list' },
+      depthStencil: { format: 'depth24plus', depthWriteEnabled: false, depthCompare: 'less' },
+    });
+  } catch (e) { setStatus('Pipeline: ' + e.message, false); return; }
+
+  // sphere normals = positions on unit sphere → reuse the same vertex buffer
+  // (second slot bound to the same buffer)
+
+  // ── Uniform packing ─────────────────────────────────────────────────────
+  const uAB  = new ArrayBuffer(80);
+  const uF   = new Float32Array(uAB);
+  const uU   = new Uint32Array(uAB);
+  function gridDims() {
+    return [Math.min(GMAX, Math.ceil(2*S.bw/CELL)),
+            Math.min(GMAX, Math.ceil(2*S.bh/CELL)),
+            Math.min(GMAX, Math.ceil(2*S.bd/CELL))];
+  }
+  function writeUniforms(lam) {
+    const [gx, gy, gz] = gridDims();
+    uF[0]=DT;    uF[1]=S.epsAA; uF[2]=S.grav; uF[3]=lam;
+    uF[4]=S.bw;  uF[5]=S.bh;   uF[6]=S.bd;   uU[7]=numP;
+    uU[8]=gx;    uU[9]=gy;     uU[10]=gz;    uU[11]=CAP;
+    uF[12]=CELL; uF[13]=S.vmax; uU[14]=S.cmode; uU[15]=0;
+    uF[16]=S.epsAA; uF[17]=S.epsAB; uF[18]=S.epsBB; uF[19]=0;
+    device.queue.writeBuffer(uBuf, 0, uAB);
+  }
+
+  // ── Camera ──────────────────────────────────────────────────────────────
+  const cam = { th: 0.55, ph: 1.05, r: 46, pan: [0, 0, 0] };
+  const camAB = new Float32Array(20);
+  function writeCamera() {
+    const e = [
+      cam.pan[0] + cam.r * Math.sin(cam.ph) * Math.cos(cam.th),
+      cam.pan[1] + cam.r * Math.cos(cam.ph),
+      cam.pan[2] + cam.r * Math.sin(cam.ph) * Math.sin(cam.th)];
+    const vp = mMul(mPersp(0.9, canvas.width / canvas.height, 0.1, 400),
+                    mLook(e, cam.pan, [0, 1, 0]));
+    camAB.set(vp, 0); camAB.set([e[0], e[1], e[2], 1], 16);
+    device.queue.writeBuffer(camBuf, 0, camAB);
+  }
+  let drag = 0;
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('pointerdown', e => { drag = e.button === 2 ? 2 : 1; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointerup',   () => drag = 0);
+  canvas.addEventListener('pointermove', e => {
+    if (drag === 1) {
+      cam.th += e.movementX * 0.006;
+      cam.ph  = Math.min(Math.PI - 0.05, Math.max(0.05, cam.ph + e.movementY * 0.006));
+    } else if (drag === 2) {
+      const s = cam.r * 0.0016;
+      cam.pan[0] -= e.movementX * s * Math.sin(cam.th) * -1;
+      cam.pan[1] += e.movementY * s;
+      cam.pan[2] -= e.movementX * s * Math.cos(cam.th);
+    }
+  });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    cam.r = Math.min(200, Math.max(6, cam.r * (1 + e.deltaY * 0.001)));
+  }, { passive: false });
+
+  // ── Depth / resize ──────────────────────────────────────────────────────
+  let depthTex = null;
+  function fit() {
+    const dpr = Math.min(devicePixelRatio || 1, 2);
+    const w = Math.floor(canvas.clientWidth * dpr), h = Math.floor(canvas.clientHeight * dpr);
+    if (canvas.width === w && canvas.height === h && depthTex) return;
+    canvas.width = w; canvas.height = h;
+    if (depthTex) depthTex.destroy();
+    depthTex = device.createTexture({ size: [w, h], format: 'depth24plus',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT });
+  }
+  addEventListener('resize', fit);
+  fit();
+
+  // ═════════════════════════════════════════════════════════════════════
+  //  Spawning
+  // ═════════════════════════════════════════════════════════════════════
+  function upload() {
+    device.queue.writeBuffer(pBuf, 0, cpuP, 0, Math.max(numP, 1) * FS);
+    document.getElementById('mN').textContent = numP.toLocaleString();
+  }
+  function clearAll() { numP = 0; cpuP.fill(0); upload(); resetStats(); }
+
+  function writeParticle(i, x, y, z, T, rad, mass, species) {
+    const b = i * FS, sd = Math.sqrt(T / mass);
+    cpuP[b]    = x;  cpuP[b+1]  = y;  cpuP[b+2]  = z;   cpuP[b+3]  = rad;
+    cpuP[b+4]  = gaussian()*sd; cpuP[b+5] = gaussian()*sd; cpuP[b+6] = gaussian()*sd;
+    cpuP[b+7]  = mass;
+    cpuP[b+8]  = 0;  cpuP[b+9]  = 0;  cpuP[b+10] = 0;   cpuP[b+11] = species;
+    cpuP[b+12] = 0;  cpuP[b+13] = 0;  cpuP[b+14] = 0;   cpuP[b+15] = 0;
+  }
+
+  // jittered cubic lattice inside a region — overlap-free starts
+  function spawnLattice(n, T, opt = {}) {
+    const o = Object.assign({ x0:-S.bw+1, x1:S.bw-1, y0:-S.bh+1, y1:S.bh-1,
+      z0:-S.bd+1, z1:S.bd-1, rad:0.5, mass:1, species:0, skip:null }, opt);
+    const W = o.x1-o.x0, H = o.y1-o.y0, D = o.z1-o.z0;
+    const n0 = numP;
+
+    // Occupancy hash of existing particles: new spawns must never overlap
+    // survivors of earlier adds (that injects huge energy via the LJ core).
+    const occ = new Map();
+    const keyI = (ix,iy,iz) => ix + 9973*(iy + 9973*iz);
+    const occAdd = (x,y,z,r) => {
+      const kk = keyI(Math.floor(x), Math.floor(y), Math.floor(z));
+      let a = occ.get(kk); if (!a) { a = []; occ.set(kk, a); }
+      a.push(x, y, z, r);
+    };
+    for (let i = 0; i < numP; i++) {
+      const b = i*FS; occAdd(cpuP[b], cpuP[b+1], cpuP[b+2], cpuP[b+3]);
+    }
+    const isClear = (x,y,z,r) => {
+      const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+      for (let dz=-2; dz<=2; dz++) for (let dy=-2; dy<=2; dy++)
+      for (let dx=-2; dx<=2; dx++) {
+        const a = occ.get(keyI(ix+dx, iy+dy, iz+dz));
+        if (!a) continue;
+        for (let j = 0; j < a.length; j += 4) {
+          const ddx=a[j]-x, ddy=a[j+1]-y, ddz=a[j+2]-z;
+          const sep = 0.95 * (a[j+3] + r);
+          if (ddx*ddx + ddy*ddy + ddz*ddz < sep*sep) { return false; }
+        }
+      }
+      return true;
+    };
+    const tryPlace = (x,y,z) => {
+      if (o.skip && o.skip(x,y,z)) return false;
+      if (!isClear(x,y,z,o.rad)) return false;
+      const sp = (typeof o.species === 'function') ? o.species(x,y,z) : o.species;
+      writeParticle(numP++, x, y, z, T, o.rad, o.mass, sp);
+      occAdd(x, y, z, o.rad);
+      return true;
+    };
+
+    // jittered lattice pass, capacity sized for n
+    const smin = 1.02, k = Math.ceil(Math.cbrt(n));
+    const kx = Math.max(1, Math.min(k, Math.floor(W/smin)));
+    const ky = Math.max(1, Math.min(k, Math.floor(H/smin)));
+    const kz = Math.max(1, Math.min(k, Math.floor(D/smin)));
+    const sx = W/kx, sy = H/ky, sz = D/kz;
+    const jit = Math.max(0, Math.min(0.12, (Math.min(sx,sy,sz) - 1.0) * 0.4));
+    let placed = 0;
+    outer:
+    for (let iz = 0; iz < kz; iz++) for (let iy = 0; iy < ky; iy++)
+    for (let ix = 0; ix < kx; ix++) {
+      if (placed >= n || numP >= MAX_P) break outer;
+      if (tryPlace(o.x0 + (ix+0.5)*sx + (Math.random()-0.5)*jit,
+                   o.y0 + (iy+0.5)*sy + (Math.random()-0.5)*jit,
+                   o.z0 + (iz+0.5)*sz + (Math.random()-0.5)*jit)) placed++;
+    }
+    // random fallback for lattice cells lost to occupancy or skip regions
+    let tries = 0;
+    while (placed < n && numP < MAX_P && tries < n * 40) {
+      tries++;
+      if (tryPlace(o.x0 + Math.random()*W,
+                   o.y0 + Math.random()*H,
+                   o.z0 + Math.random()*D)) placed++;
+    }
+
+    // remove centre-of-mass drift of the newly added batch only
+    const nNew = numP - n0;
+    if (nNew > 0) {
+      let mvx=0, mvy=0, mvz=0;
+      for (let i = n0; i < numP; i++) { const b=i*FS; mvx+=cpuP[b+4]; mvy+=cpuP[b+5]; mvz+=cpuP[b+6]; }
+      mvx/=nNew; mvy/=nNew; mvz/=nNew;
+      for (let i = n0; i < numP; i++) { const b=i*FS; cpuP[b+4]-=mvx; cpuP[b+5]-=mvy; cpuP[b+6]-=mvz; }
+    }
+    upload();
+    return placed;
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  //  Presets — each is just parameters + an initial condition
+  // ═════════════════════════════════════════════════════════════════════
+  function setUI() {
+    document.getElementById('sT').value = S.Tt;
+    document.getElementById('vT').textContent = S.Tt.toFixed(2);
+    document.getElementById('sEAA').value = S.epsAA;
+    document.getElementById('vEAA').textContent = S.epsAA.toFixed(2);
+    document.getElementById('sEAB').value = S.epsAB;
+    document.getElementById('vEAB').textContent = S.epsAB.toFixed(2);
+    document.getElementById('sEBB').value = S.epsBB;
+    document.getElementById('vEBB').textContent = S.epsBB.toFixed(2);
+    document.getElementById('sG').value = S.grav;
+    document.getElementById('vG').textContent = S.grav.toFixed(1);
+    document.getElementById('sB').value = S.bw;
+    document.getElementById('vB').textContent = S.bw;
+    document.getElementById('tgTherm').classList.toggle('on', S.therm);
+    document.querySelectorAll('#segCol button').forEach(b =>
+      b.classList.toggle('active', +b.dataset.m === S.cmode));
+  }
+  const nA = () => Math.max(1, Math.min(MAX_P,
+    +document.getElementById('nAdd').value || 500));
+  const PRESETS = {
+    gas:      () => { Object.assign(S, {Tt:2.2, epsAA:0.15, epsAB:0.15, epsBB:0.15, grav:0,   therm:true, cmode:0, bw:14,bh:14,bd:14});
+                      clearAll(); spawnLattice(nA(), 2.2); },
+    condense: () => { Object.assign(S, {Tt:0.42, epsAA:1.7, epsAB:1.7, epsBB:1.7, grav:0.6, therm:true, cmode:0, bw:14,bh:14,bd:14});
+                      clearAll(); spawnLattice(nA(), 1.6); },
+    crystal:  () => { Object.assign(S, {Tt:0.06, epsAA:2.3, epsAB:2.3, epsBB:2.3, grav:1.6, therm:true, cmode:0, bw:11,bh:11,bd:11});
+                      clearAll(); spawnLattice(nA(), 0.8); },
+    brownian: () => { Object.assign(S, {Tt:1.4, epsAA:0.4, epsAB:0.4, epsBB:0.4, grav:0,    therm:true, cmode:1, bw:12,bh:12,bd:12});
+                      clearAll();
+                      // heavy tracer at the origin; bath skips its volume
+                      writeParticle(numP++, 0, 0, 0, 0.001, 1.6, 80, 2);
+                      spawnLattice(nA(), 1.4, { skip:(x,y,z) => x*x+y*y+z*z < 7.3,
+                        species:0 }); },
+    diffuse:  () => { Object.assign(S, {Tt:1.0, epsAA:0.3, epsAB:0.3, epsBB:0.3, grav:0,    therm:true, cmode:1, bw:14,bh:14,bd:14});
+                      clearAll(); spawnLattice(nA(), 1.0, { species:(x)=> x<0 ? 0 : 1 }); },
+    demix:    () => { Object.assign(S, {Tt:0.5, epsAA:2.0, epsAB:0.15, epsBB:2.0, grav:0,
+                        therm:true, cmode:1, bw:12,bh:12,bd:12});
+                      clearAll(); spawnLattice(nA(), 1.2,
+                        { species:() => Math.random() < 0.5 ? 0 : 1 }); },
+    empty:    () => { Object.assign(S, {Tt:1.0, epsAA:1.0, epsAB:1.0, epsBB:1.0, grav:0,    therm:true, cmode:0});
+                      clearAll(); },
+  };
+  document.querySelectorAll('.preset').forEach(btn => btn.onclick = () => {
+    document.querySelectorAll('.preset').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    S.preset = btn.dataset.p;
+    PRESETS[btn.dataset.p]();
+    setUI();
+    setStatus(btn.textContent.trim() + ' — ' + numP.toLocaleString() + ' particles');
+  });
+
+  // ── Controls wiring ────────────────────────────────────────────────────
+  const bind = (id, key, lbl, fmt) => document.getElementById(id).oninput = e => {
+    S[key] = parseFloat(e.target.value);
+    document.getElementById(lbl).textContent = fmt(S[key]);
+  };
+  bind('sT', 'Tt',  'vT', v => v.toFixed(2));
+  bind('sEAA', 'epsAA', 'vEAA', v => v.toFixed(2));
+  bind('sEAB', 'epsAB', 'vEAB', v => v.toFixed(2));
+  bind('sEBB', 'epsBB', 'vEBB', v => v.toFixed(2));
+  bind('sG', 'grav','vG', v => v.toFixed(1));
+  document.getElementById('sB').oninput = e => {
+    const v = parseFloat(e.target.value);
+    S.bw = S.bh = S.bd = v;
+    document.getElementById('vB').textContent = v;
+  };
+  document.getElementById('tgTherm').onclick = e => {
+    S.therm = !S.therm;
+    e.target.classList.toggle('on', S.therm);
+  };
+  document.querySelectorAll('#segCol button').forEach(b => b.onclick = () => {
+    S.cmode = +b.dataset.m;
+    document.querySelectorAll('#segCol button').forEach(x => x.classList.toggle('active', x === b));
+  });
+  document.getElementById('bAdd').onclick = () => {
+    const n = Math.max(1, +document.getElementById('nAdd').value || 0);
+    const placed = spawnLattice(Math.min(n, MAX_P - numP), S.Tt);
+    setStatus('added ' + placed.toLocaleString() + ' → ' + numP.toLocaleString() + ' total');
+  };
+  document.getElementById('bReset').onclick = () => { clearAll(); setStatus('box cleared'); };
+  document.getElementById('tgDbg').onclick = e => {
+    S.dbg = !S.dbg;
+    e.target.classList.toggle('on', S.dbg);
+    document.getElementById('dbg').style.display = S.dbg ? 'block' : 'none';
+  };
+  const repEl = document.getElementById('rep'), repTxt = document.getElementById('repTxt');
+  if (window.self !== window.top) {
+    // Framed (e.g. a sandboxed preview): browser blocks downloads here,
+    // so don't offer a button that cannot work.
+    document.getElementById('bRepDl').style.display = 'none';
+    document.getElementById('repSub').textContent =
+      'This preview is sandboxed, so saving files is blocked. Use Copy JSON ' +
+      'and paste it into the chat. (Download appears when the page is opened ' +
+      'directly or from GitHub Pages.)';
+  }
+  function showReport(json) { repTxt.value = json; repEl.style.display = 'flex'; }
+  document.getElementById('bRepClose').onclick = () => repEl.style.display = 'none';
+  document.getElementById('bRepDl').onclick = () =>
+    download('emerge-report.json', repTxt.value);
+  document.getElementById('bRepCopy').onclick = () => {
+    repTxt.select(); repTxt.setSelectionRange(0, 1e9);
+    const done = () => setStatus('report copied — paste it into the chat');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(repTxt.value).then(done)
+        .catch(() => { document.execCommand('copy'); done(); });
+    } else { document.execCommand('copy'); done(); }
+  };
+  document.getElementById('bCap').onclick = () => {
+    if (numP === 0) { setStatus('add particles before capturing'); return; }
+    if (capT0 >= 0)  { setStatus('already capturing…'); return; }
+    capT0 = performance.now(); capSamples = [];
+    setStatus('capturing 10 s report — reproduce the bug now…');
+  };
+
+  // ═════════════════════════════════════════════════════════════════════
+  //  Measurements — read back, derive T / P / histogram
+  // ═════════════════════════════════════════════════════════════════════
+  const histCv = document.getElementById('hist');
+  let statsPending = false, statsN = 0, statsClock = 0, lastStatsTime = 0;
+  let pressEMA = 0;
+  let capT0 = -1, capSamples = [];
+
+  function resetStats() {
+    pressEMA = 0; S.Tm = S.Tt;
+    statsClock = 0; lastStatsTime = performance.now();
+    device.queue.writeBuffer(wallBuf, 0, new Uint32Array([0]));
+    ['mT','mP','mK','mD','mPE','mE'].forEach(id => document.getElementById(id).textContent = '–');
+    histCv.getContext('2d').clearRect(0, 0, histCv.width, histCv.height);
+    const gc = document.getElementById('gr');
+    gc.getContext('2d').clearRect(0, 0, gc.width, gc.height);
+  }
+
+  function scheduleStats(enc) {
+    if (statsPending || numP === 0) return;
+    statsPending = true; statsN = numP;
+    enc.copyBufferToBuffer(pBuf, 0, statsRBuf, 0, statsN * FS * 4);
+    enc.copyBufferToBuffer(wallBuf, 0, wallRBuf, 0, 4);
+    enc.copyBufferToBuffer(cellCntBuf, 0, gridRBuf, 0, GMAX*GMAX*GMAX * 4);
+  }
+  function processStats(now) {
+    if (!statsPending) return;
+    if (statsRBuf.mapState !== 'unmapped' || wallRBuf.mapState !== 'unmapped'
+        || gridRBuf.mapState !== 'unmapped') return;
+    Promise.all([
+      statsRBuf.mapAsync(GPUMapMode.READ, 0, statsN * FS * 4),
+      wallRBuf.mapAsync(GPUMapMode.READ),
+      gridRBuf.mapAsync(GPUMapMode.READ),
+    ]).then(() => {
+      const d = new Float32Array(statsRBuf.getMappedRange(0, statsN * FS * 4));
+      const imp = new Uint32Array(wallRBuf.getMappedRange())[0] / 256;
+      const grid = new Uint32Array(gridRBuf.getMappedRange());
+      if (numP > 0) computeStats(d, statsN, imp, now, grid);
+      statsRBuf.unmap(); wallRBuf.unmap(); gridRBuf.unmap();
+      device.queue.writeBuffer(wallBuf, 0, new Uint32Array([0]));
+      statsPending = false;
+    }).catch(() => { statsPending = false; });
+  }
+
+  function computeStats(d, n, imp, now, grid) {
+    let ke = 0, m2v2 = 0, pe = 0;
+    const speeds = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const b = i * FS;
+      const vx=d[b+4], vy=d[b+5], vz=d[b+6], m=d[b+7];
+      const v2 = vx*vx + vy*vy + vz*vz;
+      speeds[i] = Math.sqrt(v2);
+      ke += 0.5 * m * v2;
+      m2v2 += m * v2;
+      pe += d[b+12] + m * S.grav * (d[b+1] + S.bh);   // LJ share + gravity
+    }
+    const Etot = ke + pe;
+    const T = m2v2 / (3 * n);                       // equipartition, kB = 1
+    S.Tm = T;
+    S.vmax = 3.2 * Math.sqrt(Math.max(T, 0.02)) + 0.4;
+
+    const dtWin = Math.max((now - lastStatsTime) / 1000, 1e-3);
+    lastStatsTime = now;
+    const area = 8 * (S.bw*S.bh + S.bw*S.bd + S.bh*S.bd);
+    const P = imp / (dtWin * area);
+    pressEMA = pressEMA === 0 ? P : pressEMA * 0.7 + P * 0.3;
+
+    // ── Diagnostics: the four classic MD failure modes ──────────────────
+    let nan = 0, oob = 0, maxV = 0;
+    for (let i = 0; i < n; i++) {
+      const b = i * FS;
+      const x=d[b], y=d[b+1], z=d[b+2], vx=d[b+4], vy=d[b+5], vz=d[b+6];
+      if (!isFinite(x) || !isFinite(y) || !isFinite(z) ||
+          !isFinite(vx) || !isFinite(vy) || !isFinite(vz)) { nan++; continue; }
+      if (Math.abs(x) > S.bw + 0.5 || Math.abs(y) > S.bh + 0.5 ||
+          Math.abs(z) > S.bd + 0.5) oob++;
+      if (speeds[i] > maxV) maxV = speeds[i];
+    }
+    let ovf = 0;
+    {
+      const [gx, gy, gz] = gridDims();
+      for (let iz = 0; iz < gz; iz++) for (let iy = 0; iy < gy; iy++)
+      for (let ix = 0; ix < gx; ix++) {
+        if (grid[(iz*gy + iy)*gx + ix] > CAP) ovf++;
+      }
+    }
+    if (S.dbg) {
+      const bad = (v) => v > 0 ? ' class="bad"' : '';
+      document.getElementById('dbg').innerHTML =
+        'NaN / Inf <b' + bad(nan) + '>' + nan + '</b><br>' +
+        'outside box <b' + bad(oob) + '>' + oob + '</b><br>' +
+        'cell overflow <b' + bad(ovf) + '>' + ovf + '</b><br>' +
+        'max |v| <b>' + maxV.toFixed(2) + '</b><br>' +
+        'T meas / target <b>' + T.toFixed(3) + ' / ' + S.Tt.toFixed(2) + '</b>';
+    }
+
+    // ── Capture report ───────────────────────────────────────────────────
+    if (capT0 >= 0) {
+      const t = (now - capT0) / 1000;
+      capSamples.push({ t:+t.toFixed(2), T:+T.toFixed(4), P:+P.toFixed(4),
+        ke:+ke.toFixed(1), pe:+pe.toFixed(1), E:+Etot.toFixed(1),
+        n, nan, oob, ovf, maxV:+maxV.toFixed(2),
+        Tt:S.Tt, epsAA:S.epsAA, epsAB:S.epsAB, epsBB:S.epsBB, grav:S.grav, bw:S.bw, therm:S.therm });
+      setStatus('capturing report… ' + t.toFixed(0) + ' / 10 s — reproduce the bug now');
+      if (t >= 10) {
+        const sn = Math.min(n, 2048);
+        const report = {
+          app: 'Emerge3', when: new Date().toISOString(),
+          constants: { FS, DT, SUB, CELL, CAP, MAX_P },
+          params: Object.assign(JSON.parse(JSON.stringify(S)),
+            { nAdd: +document.getElementById('nAdd').value || 0 }),
+          samples: capSamples,
+          snapshot: { count: sn, stride: FS,
+            fields: 'x y z rad vx vy vz mass fx fy fz species _ _ _ _',
+            data: Array.from(d.subarray(0, sn * FS), v => +v.toFixed(3)) },
+        };
+        showReport(JSON.stringify(report));
+        capT0 = -1;
+        setStatus('report ready — copy or download it, then attach it to the chat');
+      }
+    }
+
+    document.getElementById('mT').textContent = T.toFixed(3);
+    document.getElementById('mP').textContent = pressEMA.toFixed(3);
+    const fE = v => Math.abs(v) >= 10000 ? (v/1000).toFixed(1)+'k' : v.toFixed(1);
+    document.getElementById('mK').textContent  = fE(ke);
+    document.getElementById('mPE').textContent = fE(pe);
+    document.getElementById('mE').textContent  = fE(Etot);
+    document.getElementById('mD').textContent =
+      (n / (8*S.bw*S.bh*S.bd)).toFixed(3);
+    drawHist(speeds, n, T);
+    drawGr(d, n);
+  }
+
+  function drawHist(speeds, n, T) {
+    if (histCv.clientWidth && histCv.width !== histCv.clientWidth * 2) {
+      histCv.width = histCv.clientWidth * 2; histCv.height = histCv.clientHeight * 2;
+    }
+    const W = histCv.width, H = histCv.height, g = histCv.getContext('2d');
+    g.clearRect(0, 0, W, H);
+    const BINS = 46;
+    const vTop = Math.max(S.vmax, 0.5);
+    const bins = new Float32Array(BINS);
+    for (let i = 0; i < n; i++) {
+      const k = Math.min(BINS - 1, Math.floor((speeds[i] / vTop) * BINS));
+      bins[k]++;
+    }
+    let mb = 0; for (let k = 0; k < BINS; k++) mb = Math.max(mb, bins[k]);
+    const bw = W / BINS, base = H - 16;
+    for (let k = 0; k < BINS; k++) {
+      const h = (bins[k] / mb) * (base - 8);
+      const t = (k + 0.5) / BINS;
+      let r, gg, b;
+      if (t < 0.5) { r=33+(252-33)*t*2;  gg=84+(199-84)*t*2;  b=242+(56-242)*t*2; }
+      else { r=252+(250-252)*(t-0.5)*2; gg=199+(61-199)*(t-0.5)*2; b=56+(51-56)*(t-0.5)*2; }
+      g.fillStyle = 'rgba(' + (r|0) + ',' + (gg|0) + ',' + (b|0) + ',0.85)';
+      g.fillRect(k * bw, base - h, Math.max(bw - 1.5, 1), h);
+    }
+    // Maxwell–Boltzmann overlay for measured T, unit mass
+    if (T > 0.001) {
+      g.strokeStyle = 'rgba(245,165,36,0.95)'; g.lineWidth = 2.5;
+      g.setLineDash([]);
+      g.beginPath();
+      let peak = 0;
+      const f = v => v * v * Math.exp(-v * v / (2 * T));
+      for (let x = 0; x <= W; x += 3) peak = Math.max(peak, f((x / W) * vTop));
+      for (let x = 0; x <= W; x += 3) {
+        const y = base - (f((x / W) * vTop) / peak) * (base - 8) * 0.98;
+        if (x === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+    g.fillStyle = 'rgba(143,163,200,0.7)'; g.font = '18px IBM Plex Mono';
+    g.fillText('0', 4, H - 3);
+    g.fillText(vTop.toFixed(1) + ' u/s', W - 74, H - 3);
+  }
+
+  const grCv = document.getElementById('gr');
+  function drawGr(d, n) {
+    if (grCv.clientWidth && grCv.width !== grCv.clientWidth * 2) {
+      grCv.width = grCv.clientWidth * 2; grCv.height = grCv.clientHeight * 2;
+    }
+    const W = grCv.width, H = grCv.height, g = grCv.getContext('2d');
+    g.clearRect(0, 0, W, H);
+    if (n < 50) return;
+    // pair histogram over a subsample — unbiased estimate of g(r)
+    const RMAX = 5.0, BINS = 60;
+    const K = Math.min(n, 1200), step = Math.max(1, Math.floor(n / K));
+    const idx = [];
+    for (let i = 0; i < n && idx.length < K; i += step) idx.push(i);
+    const kk = idx.length;
+    const hist = new Float32Array(BINS);
+    for (let a = 0; a < kk; a++) {
+      const ba = idx[a] * FS;
+      const xa = d[ba], ya = d[ba+1], za = d[ba+2];
+      for (let c = a + 1; c < kk; c++) {
+        const bc = idx[c] * FS;
+        const dx = d[bc]-xa, dy = d[bc+1]-ya, dz = d[bc+2]-za;
+        const r2 = dx*dx + dy*dy + dz*dz;
+        if (r2 >= RMAX*RMAX) continue;
+        hist[Math.floor(Math.sqrt(r2) / RMAX * BINS)]++;
+      }
+    }
+    const V = 8 * S.bw * S.bh * S.bd;
+    const dr = RMAX / BINS, base = H - 16;
+    const gr = new Float32Array(BINS);
+    let gmax = 0;
+    for (let k = 0; k < BINS; k++) {
+      const r = (k + 0.5) * dr;
+      const exp = (kk * (kk - 1) / 2) * (4 * Math.PI * r * r * dr) / V;
+      gr[k] = exp > 0 ? hist[k] / exp : 0;
+      if (k > 2) gmax = Math.max(gmax, gr[k]);
+    }
+    const yTop = Math.min(8, Math.max(2.5, gmax * 1.15));
+    const y1 = base - (1 / yTop) * (base - 8);
+    g.strokeStyle = 'rgba(143,163,200,0.4)'; g.lineWidth = 1; g.setLineDash([4,4]);
+    g.beginPath(); g.moveTo(0, y1); g.lineTo(W, y1); g.stroke(); g.setLineDash([]);
+    g.strokeStyle = 'rgba(245,165,36,0.95)'; g.lineWidth = 2.5;
+    g.beginPath();
+    for (let k = 0; k < BINS; k++) {
+      const x = (k + 0.5) / BINS * W;
+      const y = base - Math.min(gr[k] / yTop, 1) * (base - 8);
+      if (k === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke();
+    g.fillStyle = 'rgba(143,163,200,0.7)'; g.font = '18px IBM Plex Mono';
+    g.fillText('0', 4, H - 3);
+    g.fillText('5\u03c3', W - 34, H - 3);
+    g.fillText('g=1', W - 74, y1 - 5);
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  //  Frame loop
+  // ═════════════════════════════════════════════════════════════════════
+  let last = performance.now(), fpsEMA = 60, simEMA = 0;
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dtF = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    fpsEMA = fpsEMA * 0.95 + (1 / Math.max(dtF, 1e-4)) * 0.05;
+    fit();
+
+    // thermostat: Berendsen velocity rescale toward target
+    let lam = 1;
+    if (S.therm && S.Tm > 1e-4) {
+      lam = Math.sqrt(Math.max(0.9, Math.min(1.1,
+        1 + (DT / TAU) * (S.Tt / S.Tm - 1))));
+      // Propagate the temperature model forward: velocities scale by lam
+      // each sub-step, so T scales by lam^2 per sub-step, SUB times per
+      // frame. Without this the loop runs on a 0.55 s stale measurement
+      // and oscillates violently (delayed-feedback instability).
+      S.Tm = Math.max(1e-4, S.Tm * Math.pow(lam, 2 * SUB));
+    }
+    writeUniforms(lam);
+    writeCamera();
+
+    const t0 = performance.now();
+    const enc = device.createCommandEncoder();
+
+    if (numP > 0) {
+      const [gx, gy, gz] = gridDims();
+      const cellGroups = Math.ceil((gx * gy * gz) / 64);
+      const pGroups    = Math.ceil(numP / 64);
+      const cp = enc.beginComputePass();
+      for (let s = 0; s < SUB; s++) {
+        cp.setPipeline(clearPL); cp.setBindGroup(0, simBG); cp.dispatchWorkgroups(cellGroups);
+        cp.setPipeline(buildPL); cp.setBindGroup(0, simBG); cp.dispatchWorkgroups(pGroups);
+        cp.setPipeline(forcePL); cp.setBindGroup(0, simBG); cp.dispatchWorkgroups(pGroups);
+        cp.setPipeline(integPL); cp.setBindGroup(0, simBG); cp.dispatchWorkgroups(pGroups);
+      }
+      cp.end();
+    }
+
+    statsClock += dtF;
+    if (statsClock >= 0.55) { scheduleStats(enc); statsClock = 0; }
+
+    const rp = enc.beginRenderPass({
+      colorAttachments: [{ view: ctx.getCurrentTexture().createView(),
+        clearValue: { r: 0.031, g: 0.051, b: 0.102, a: 1 },
+        loadOp: 'clear', storeOp: 'store' }],
+      depthStencilAttachment: { view: depthTex.createView(),
+        depthClearValue: 1, depthLoadOp: 'clear', depthStoreOp: 'store' },
+    });
+    if (numP > 0) {
+      rp.setPipeline(renderPL);
+      rp.setBindGroup(0, renBG);
+      rp.setVertexBuffer(0, posVBuf);
+      rp.setVertexBuffer(1, posVBuf);   // unit-sphere normals == positions
+      rp.setIndexBuffer(idxVBuf, 'uint16');
+      rp.drawIndexed(sph.idx.length, numP);
+    }
+    rp.setPipeline(wirePL);
+    rp.setBindGroup(0, renBG);
+    rp.draw(24);
+    rp.end();
+
+    device.queue.submit([enc.finish()]);
+    simEMA = simEMA * 0.9 + (performance.now() - t0) * 0.1;
+    document.getElementById('mF').textContent =
+      (1000 / fpsEMA).toFixed(1) + ' / ' + simEMA.toFixed(1);
+
+    processStats(now);
+  }
+
+  // boot into the condensation experiment — the most striking opener
+  document.querySelector('[data-p="condense"]').classList.add('active');
+  PRESETS.condense();
+  setUI();
+  setStatus('WebGPU active — ' + numP.toLocaleString() + ' particles · cooling vapour, watch droplets form');
+  requestAnimationFrame(frame);
+}
+main().catch(e => setStatus(e.message, false));
+</script>
+</body>
+</html>
