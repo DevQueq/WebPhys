@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jelly coherence lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE everyday science bench: calm, precise, a little playful because it is jelly
+   IDEA a set of jelly specimens under test: the gel itself is the live picture, wobbling
+   PICTURE the 64x64 lattice field large, beside a phase dial of the coherent set
+   COLOUR raspberry jelly ground fields, deep teal for the opposite phase, amber marks
+   TYPE Sora display + Inter text
+   LAYOUT laptop: field left, dial and readouts right, controls under; phone: title, field, dial, controls */
+:root{color-scheme:light dark;--bg:light-dark(#fff5f7,#14090e);--ink:light-dark(#2a0b17,#f7e6ec);--soft:light-dark(#7a4a5c,#c9a3b1);--panel:light-dark(#ffffff,#1f0f16);--line:light-dark(#efcbd6,#3d2029);--rasp:light-dark(#c8174a,#ff4f7d);--teal:light-dark(#0d6a73,#3cc6cb);--amber:light-dark(#d98e00,#ffc53d);--m0:light-dark(#c8174a,#ff5c86);--m1:light-dark(#0d6a73,#45cfd3);--m2:light-dark(#d98e00,#ffc53d);--m3:light-dark(#3b4cc0,#8f9dff);--m4:light-dark(#5b7d1a,#a6d35a);--m5:light-dark(#6b5d66,#c7b7c0)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 Inter,system-ui,sans-serif;overflow-x:clip}
+.band{padding:clamp(22px,3.5vw,52px) max(5vw,16px)}
+.wrap{max-width:1240px;margin:0 auto}
+h1,h2{font-family:Sora,Inter,sans-serif;letter-spacing:-.02em;line-height:1.05;text-wrap:balance;margin:0 0 .4em}
+h1{font-size:clamp(32px,4.4vw,48px)}
+h2{font-size:clamp(22px,2.6vw,30px)}
+p{max-width:68ch;margin:.3em 0 .8em}
+.top{background:light-dark(#c8174a,#7d1033);color:#fff;padding-bottom:18px}
+.top p{color:#fff;opacity:.92}
+.lab{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:clamp(16px,2.5vw,32px);align-items:start}
+.fig{position:relative;aspect-ratio:1;max-height:640px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.fig>canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
+.tag{position:absolute;left:10px;bottom:10px;background:color-mix(in srgb,var(--panel) 85%,transparent);padding:4px 10px;border-radius:8px;font-size:13px;color:var(--soft)}
+.side{display:grid;gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.dialrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center}
+.dial{position:relative;aspect-ratio:1;max-width:260px;width:100%}
+.dial canvas{position:absolute;inset:0;width:100%;height:100%}
+.big{font-family:Sora,Inter,sans-serif;font-size:clamp(40px,6vw,64px);line-height:1;font-variant-numeric:tabular-nums;color:var(--rasp)}
+.lbl{font-size:13px;color:var(--soft)}
+.figs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 18px;margin-top:12px}
+.figs b{display:block;font-size:20px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.legend{display:grid;gap:4px;margin-top:10px;font-size:14px}
+.legend div{display:grid;grid-template-columns:14px minmax(0,1fr) auto;gap:8px;align-items:center}
+.legend i{width:14px;height:14px;border-radius:50%}
+.legend span:last-child{font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--soft)}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+button,select{font:inherit;font-size:15px;min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+button:hover{border-color:var(--rasp)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+button.go{background:var(--rasp);border-color:var(--rasp);color:#fff;font-weight:600}
+.ctrls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 24px;margin-top:18px}
+.ctl label{display:flex;justify-content:space-between;gap:8px;font-weight:500;font-size:15px}
+.ctl output{font-variant-numeric:tabular-nums;color:var(--rasp);font-weight:600;white-space:nowrap}
+.ctl small{display:block;color:var(--soft);font-size:13px;line-height:1.35}
+input[type=range]{width:100%;height:44px;margin:0;accent-color:var(--rasp);background:transparent}
+.presets{margin-top:16px}
+.presets .lbl{margin-right:4px;align-self:center}
+.plot{position:relative;height:300px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.plot canvas{position:absolute;inset:0;width:100%;height:100%}
+.runs{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;margin-top:8px;color:var(--soft)}
+.runs b{color:var(--ink);font-weight:600}
+.alt{background:color-mix(in srgb,var(--rasp) 7%,var(--bg))}
+.maprow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:clamp(16px,3vw,40px);align-items:start}
+.map{display:grid;grid-template-columns:auto repeat(6,minmax(0,1fr));gap:3px;font-size:13px}
+.map .c{aspect-ratio:1.25;border-radius:6px;display:grid;place-items:center;font-variant-numeric:tabular-nums;border:0;padding:0;min-height:0;font-size:13px}
+.map .c.cur{outline:3px solid var(--amber);outline-offset:-3px}
+.map .ax{display:grid;place-items:center;color:var(--soft);white-space:nowrap;padding:2px 6px}
+.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin:10px 0}
+.bar i{display:block;height:100%;width:0;background:var(--rasp)}
+.notes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px}
+.notes h3{font-family:Sora,Inter,sans-serif;font-size:18px;margin:0 0 .3em}
+.warn{color:var(--rasp);font-weight:600;min-height:1.4em;margin:6px 0 0}
+@media(max-width:900px){.ctrls{grid-template-columns:repeat(2,minmax(0,1fr))}.notes{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:760px){.lab,.maprow{grid-template-columns:minmax(0,1fr)}.fig{max-height:none}}
+@media(max-width:520px){.ctrls{grid-template-columns:minmax(0,1fr)}.dialrow{grid-template-columns:minmax(0,1fr)}.dial{max-width:220px;margin:0 auto}}
+</style></head><body>
+<header class="band top"><div class="wrap">
+<h1>Coherent sets in a lossless jelly</h1>
+<p>A 64&times;64 lattice stands in for the gel network. Nothing in it dissipates energy. It starts with a coherent set: standing waves that share one frequency and one phase but run in different directions. Change the coupling and watch whether the set keeps its phase relation.</p>
+</div></header>
+<main>
+<section class="band"><div class="wrap">
+<div class="lab">
+ <div class="fig" id="fieldBox"><canvas id="field"></canvas><div class="tag" id="ftag">Displacement: raspberry up, teal down</div></div>
+ <div class="side">
+  <div class="card">
+   <div class="dialrow">
+    <div class="dial"><canvas id="dial"></canvas></div>
+    <div><div class="lbl">Phase coherence r</div><div class="big" id="rBig">1.00</div><div class="lbl">1 = locked, near 0 = scattered</div></div>
+   </div>
+   <div class="legend" id="legend"></div>
+   <div class="figs">
+    <div><span class="lbl">Time</span><b id="fT">0 periods</b></div>
+    <div><span class="lbl">Energy still in the set</span><b id="fK">100%</b></div>
+    <div><span class="lbl">Total energy change</span><b id="fE">0%</b></div>
+    <div><span class="lbl">Nonlinear / linear stiffness</span><b id="fEta">0</b></div>
+   </div>
+  </div>
+  <div class="btns">
+   <button class="go" id="bRun">Pause</button><button id="bRestart">Restart</button><button id="bSeed">New disorder sample</button>
+  </div>
+  <p class="warn" id="warn" aria-live="polite"></p>
+ </div>
+</div>
+<div class="ctrls">
+ <div class="ctl"><label for="sEta">Nonlinear coupling &eta; <output id="oEta"></output></label><input type="range" id="sEta" min="0" max="7" step="1" value="0"><small>Average extra stiffness from anharmonic bonds, as a fraction of the linear stiffness</small></div>
+ <div class="ctl"><label for="sDel">Disorder &delta; <output id="oDel"></output></label><input type="range" id="sDel" min="0" max="0.8" step="0.05" value="0"><small>Each bond's stiffness varies at random by up to &plusmn;&delta;</small></div>
+ <div class="ctl"><label for="sNoi">Background jostling <output id="oNoi"></output></label><input type="range" id="sNoi" min="0" max="1" step="0.05" value="0"><small>Random initial motion everywhere, as a share of the set's energy</small></div>
+ <div class="ctl"><label for="sM">Members of the set <output id="oM"></output></label><input type="range" id="sM" min="2" max="6" step="1" value="4"><small>Members 1 to 4 share one frequency exactly; 5 and 6 differ by 0.4%</small></div>
+ <div class="ctl"><label for="sSpr">Initial phase spread <output id="oSpr"></output></label><input type="range" id="sSpr" min="0" max="180" step="5" value="0"><small>0&deg; is common origin; 180&deg; is coincidence (random phases)</small></div>
+ <div class="ctl"><label for="sSpd">Speed <output id="oSpd"></output></label><input type="range" id="sSpd" min="0.25" max="4" step="0.25" value="1"><small>Periods per second, roughly three times this value</small></div>
+</div>
+<div class="btns presets"><span class="lbl">Try:</span>
+ <button data-p='{"eta":0,"delta":0,"noise":0,"M":4,"spread":0}'>Perfect gel</button>
+ <button data-p='{"eta":0,"delta":0,"noise":0,"M":6,"spread":0}'>Slightly detuned members</button>
+ <button data-p='{"eta":0,"delta":0.5,"noise":0,"M":4,"spread":0}'>Disordered network</button>
+ <button data-p='{"eta":6,"delta":0,"noise":0,"M":4,"spread":0}'>Strong nonlinearity alone</button>
+ <button data-p='{"eta":6,"delta":0,"noise":0.5,"M":4,"spread":0}'>Nonlinearity plus jostling</button>
+ <button data-p='{"eta":0,"delta":0,"noise":0,"M":4,"spread":180}'>Coincidence</button>
+</div>
+</div></section>
+<section class="band alt"><div class="wrap">
+<h2>Coherence and the set's energy over time</h2>
+<p>The upper panel tracks phase coherence r; the lower tracks the share of energy still in the set's modes. These are separate questions: energy can leave a set whose phases stay locked. Grey lines are your previous three runs.</p>
+<div class="plot" id="plotBox"><canvas id="plot"></canvas></div>
+<div class="runs" id="runs"></div>
+</div></section>
+<section class="band"><div class="wrap maprow">
+<div>
+<h2>Regime map</h2>
+<p>Runs 36 gels off-screen, sweeping nonlinear coupling across and disorder up, with your current jostling, members and phase spread. Each cell is the average over the last quarter of the run. Click a cell to watch it live.</p>
+<div class="btns"><select id="mMetric" aria-label="Quantity to map"><option value="r">Phase coherence r</option><option value="k">Energy still in the set</option></select><select id="mDur" aria-label="Run length"><option value="20">20 periods</option><option value="40" selected>40 periods</option><option value="80">80 periods</option></select><button class="go" id="bMap">Run map</button></div>
+<div class="bar"><i id="mBar"></i></div><p class="lbl" id="mStat">Not run yet. 40 periods takes roughly 10 to 30 seconds.</p>
+</div>
+<div class="map" id="map"></div>
+</div></section>
+<section class="band alt"><div class="wrap notes">
+<div><h3>What the model is</h3><p>Each lattice site carries one displacement (a single polarisation, like one shear component) with unit mass. Neighbours are joined by springs with force k&middot;s + &beta;s&sup3;, where s is the stretch. Boundaries wrap around. A symplectic (velocity Verlet) integrator conserves energy apart from a small bounded wobble, shown as the total energy change.</p></div>
+<div><h3>How coherence is measured</h3><p>Each member is a standing wave cos(k&middot;x) with |k| fixed at 5 lattice units: directions (3,4), (4,3), (3,&minus;4), (4,&minus;3), then (5,0) and (0,5). Projecting the field onto each gives a complex amplitude, so its phase is exact at every instant. r is the Kuramoto order parameter of those phases.</p></div>
+<div><h3>What it leaves out</h3><p>There is no solvent phase, so there are no fast or slow compressional branches: this is the network's shear branch alone. Lattice anisotropy makes members 5 and 6 slightly off frequency. "Energy still in the set" uses linear mode energies, so with strong nonlinearity it can read above 100% at first.</p></div>
+</div></section>
+</main>
